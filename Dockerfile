@@ -161,6 +161,8 @@ RUN if [ ! $(getent group "$GF_GID") ]; then \
 COPY --from=go-src /tmp/grafana/bin/grafana* /tmp/grafana/bin/*/grafana* ./bin/
 COPY --from=js-src /tmp/grafana/public ./public
 
+COPY provisioning/* $GF_PATHS_PROVISIONING
+
 EXPOSE 3000
 
 ARG RUN_SH=./packaging/docker/run.sh
