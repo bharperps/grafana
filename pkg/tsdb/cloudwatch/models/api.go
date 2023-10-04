@@ -1,24 +1,27 @@
 package models
 
 import (
+	"context"
 	"net/url"
 
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
 	"github.com/aws/aws-sdk-go/service/cloudwatchlogs"
+	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/oam"
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
 	"github.com/grafana/grafana/pkg/tsdb/cloudwatch/models/resources"
 )
 
-type RequestContextFactoryFunc func(pluginCtx backend.PluginContext, region string) (reqCtx RequestContext, err error)
+type RequestContextFactoryFunc func(ctx context.Context, pluginCtx backend.PluginContext, region string) (reqCtx RequestContext, err error)
 
-type RouteHandlerFunc func(pluginCtx backend.PluginContext, reqContextFactory RequestContextFactoryFunc, parameters url.Values) ([]byte, *HttpError)
+type RouteHandlerFunc func(ctx context.Context, pluginCtx backend.PluginContext, reqContextFactory RequestContextFactoryFunc, parameters url.Values) ([]byte, *HttpError)
 
 type RequestContext struct {
 	MetricsClientProvider MetricsClientProvider
 	LogsAPIProvider       CloudWatchLogsAPIProvider
 	OAMAPIProvider        OAMAPIProvider
+	EC2APIProvider        EC2APIProvider
 	Settings              CloudWatchSettings
 	Features              featuremgmt.FeatureToggles
 }
@@ -39,6 +42,10 @@ type AccountsProvider interface {
 	GetAccountsForCurrentUserOrRole() ([]resources.ResourceResponse[resources.Account], error)
 }
 
+type RegionsAPIProvider interface {
+	GetRegions() ([]resources.ResourceResponse[resources.Region], error)
+}
+
 // Clients
 type MetricsClientProvider interface {
 	ListMetricsWithPageLimit(params *cloudwatch.ListMetricsInput) ([]resources.MetricResponse, error)
@@ -57,4 +64,9 @@ type CloudWatchLogsAPIProvider interface {
 type OAMAPIProvider interface {
 	ListSinks(*oam.ListSinksInput) (*oam.ListSinksOutput, error)
 	ListAttachedLinks(*oam.ListAttachedLinksInput) (*oam.ListAttachedLinksOutput, error)
+}
+
+type EC2APIProvider interface {
+	DescribeRegions(in *ec2.DescribeRegionsInput) (*ec2.DescribeRegionsOutput, error)
+	DescribeInstancesPages(in *ec2.DescribeInstancesInput, fn func(*ec2.DescribeInstancesOutput, bool) bool) error
 }

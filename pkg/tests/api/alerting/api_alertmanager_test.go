@@ -12,10 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/grafana/pkg/expr"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/grafana/pkg/expr"
 
 	apimodels "github.com/grafana/grafana/pkg/services/ngalert/api/tooling/definitions"
 	ngmodels "github.com/grafana/grafana/pkg/services/ngalert/models"
@@ -100,7 +101,7 @@ func TestIntegrationAMConfigAccess(t *testing.T) {
 				desc:      "un-authenticated request should fail",
 				url:       "http://%s/api/alertmanager/grafana/config/api/v1/alerts",
 				expStatus: http.StatusUnauthorized,
-				expBody:   `{"message":"Unauthorized"}`,
+				expBody:   `"message":"Unauthorized"`,
 			},
 			{
 				desc:      "viewer request should fail",
@@ -170,7 +171,7 @@ func TestIntegrationAMConfigAccess(t *testing.T) {
 				desc:      "un-authenticated request should fail",
 				url:       "http://%s/api/alertmanager/grafana/config/api/v1/alerts",
 				expStatus: http.StatusUnauthorized,
-				expBody:   `{"message": "Unauthorized"}`,
+				expBody:   `{"extra":null,"message":"Unauthorized","messageId":"auth.unauthorized","statusCode":401,"traceID":""}`,
 			},
 			{
 				desc:      "viewer request should succeed",
@@ -212,11 +213,11 @@ func TestIntegrationAMConfigAccess(t *testing.T) {
 	})
 
 	t.Run("when creating silence", func(t *testing.T) {
-		body := `
+		now := time.Now()
+		body := fmt.Sprintf(`
 		{
 			"comment": "string",
 			"createdBy": "string",
-			"endsAt": "2023-03-31T14:17:04.419Z",
 			"matchers": [
 			  {
 				"isRegex": true,
@@ -224,16 +225,17 @@ func TestIntegrationAMConfigAccess(t *testing.T) {
 				"value": "string"
 			  }
 			],
-			"startsAt": "2021-03-31T13:17:04.419Z"
+			"startsAt": "%s",
+			"endsAt": "%s"
 		  }
-		`
+		`, now.Format(time.RFC3339), now.Add(10*time.Second).Format(time.RFC3339))
 
 		testCases := []testCase{
 			{
 				desc:      "un-authenticated request should fail",
 				url:       "http://%s/api/alertmanager/grafana/config/api/v2/silences",
 				expStatus: http.StatusUnauthorized,
-				expBody:   `{"message":"Unauthorized"}`,
+				expBody:   `"message":"Unauthorized"`,
 			},
 			{
 				desc:      "viewer request should fail",
@@ -284,7 +286,7 @@ func TestIntegrationAMConfigAccess(t *testing.T) {
 				desc:      "un-authenticated request should fail",
 				url:       "http://%s/api/alertmanager/grafana/api/v2/silences",
 				expStatus: http.StatusUnauthorized,
-				expBody:   `{"message": "Unauthorized"}`,
+				expBody:   `"message": "Unauthorized"`,
 			},
 			{
 				desc:      "viewer request should succeed",
@@ -339,7 +341,7 @@ func TestIntegrationAMConfigAccess(t *testing.T) {
 				desc:      "un-authenticated request should fail",
 				url:       "http://%s/api/alertmanager/grafana/api/v2/silence/%s",
 				expStatus: http.StatusUnauthorized,
-				expBody:   `{"message":"Unauthorized"}`,
+				expBody:   `"message":"Unauthorized"`,
 			},
 			{
 				desc:      "viewer request should fail",
@@ -421,7 +423,7 @@ func TestIntegrationAlertAndGroupsQuery(t *testing.T) {
 		b, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
 		require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
-		require.JSONEq(t, `{"message": "Unauthorized"}`, string(b))
+		require.Contains(t, string(b), `"message":"Unauthorized"`)
 	}
 
 	// Create a user to make authenticated requests
@@ -445,11 +447,11 @@ func TestIntegrationAlertAndGroupsQuery(t *testing.T) {
 		})
 		b, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
-		require.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 
-		var res map[string]interface{}
+		var res map[string]any
 		require.NoError(t, json.Unmarshal(b, &res))
-		require.Equal(t, "invalid username or password", res["message"])
+		assert.Equal(t, "Invalid username or password", res["message"])
 	}
 
 	// When there are no alerts available, it returns an empty list.
@@ -503,12 +505,12 @@ func TestIntegrationAlertAndGroupsQuery(t *testing.T) {
 					GrafanaManagedAlert: &apimodels.PostableGrafanaRule{
 						Title:     "AlwaysFiring",
 						Condition: "A",
-						Data: []ngmodels.AlertQuery{
+						Data: []apimodels.AlertQuery{
 							{
 								RefID: "A",
-								RelativeTimeRange: ngmodels.RelativeTimeRange{
-									From: ngmodels.Duration(time.Duration(5) * time.Hour),
-									To:   ngmodels.Duration(time.Duration(3) * time.Hour),
+								RelativeTimeRange: apimodels.RelativeTimeRange{
+									From: apimodels.Duration(time.Duration(5) * time.Hour),
+									To:   apimodels.Duration(time.Duration(3) * time.Hour),
 								},
 								DatasourceUID: expr.DatasourceUID,
 								Model: json.RawMessage(`{
@@ -644,12 +646,12 @@ func TestIntegrationRulerAccess(t *testing.T) {
 						GrafanaManagedAlert: &apimodels.PostableGrafanaRule{
 							Title:     fmt.Sprintf("AlwaysFiring %d", i),
 							Condition: "A",
-							Data: []ngmodels.AlertQuery{
+							Data: []apimodels.AlertQuery{
 								{
 									RefID: "A",
-									RelativeTimeRange: ngmodels.RelativeTimeRange{
-										From: ngmodels.Duration(time.Duration(5) * time.Hour),
-										To:   ngmodels.Duration(time.Duration(3) * time.Hour),
+									RelativeTimeRange: apimodels.RelativeTimeRange{
+										From: apimodels.Duration(time.Duration(5) * time.Hour),
+										To:   apimodels.Duration(time.Duration(3) * time.Hour),
 									},
 									DatasourceUID: expr.DatasourceUID,
 									Model: json.RawMessage(`{
@@ -873,6 +875,7 @@ func TestIntegrationAlertRuleCRUD(t *testing.T) {
 			rulegroup       string
 			interval        model.Duration
 			rule            apimodels.PostableExtendedRuleNode
+			expectedCode    int
 			expectedMessage string
 		}{
 			{
@@ -886,7 +889,7 @@ func TestIntegrationAlertRuleCRUD(t *testing.T) {
 					},
 					GrafanaManagedAlert: &apimodels.PostableGrafanaRule{
 						Title: "AlwaysFiring",
-						Data:  []ngmodels.AlertQuery{},
+						Data:  []apimodels.AlertQuery{},
 					},
 				},
 				expectedMessage: "invalid rule specification at index [0]: invalid alert rule: no queries or expressions are found",
@@ -903,12 +906,12 @@ func TestIntegrationAlertRuleCRUD(t *testing.T) {
 					GrafanaManagedAlert: &apimodels.PostableGrafanaRule{
 						Title:     "",
 						Condition: "A",
-						Data: []ngmodels.AlertQuery{
+						Data: []apimodels.AlertQuery{
 							{
 								RefID: "A",
-								RelativeTimeRange: ngmodels.RelativeTimeRange{
-									From: ngmodels.Duration(time.Duration(5) * time.Hour),
-									To:   ngmodels.Duration(time.Duration(3) * time.Hour),
+								RelativeTimeRange: apimodels.RelativeTimeRange{
+									From: apimodels.Duration(time.Duration(5) * time.Hour),
+									To:   apimodels.Duration(time.Duration(3) * time.Hour),
 								},
 								DatasourceUID: expr.DatasourceUID,
 								Model: json.RawMessage(`{
@@ -933,12 +936,12 @@ func TestIntegrationAlertRuleCRUD(t *testing.T) {
 					GrafanaManagedAlert: &apimodels.PostableGrafanaRule{
 						Title:     getLongString(t, ngstore.AlertRuleMaxTitleLength+1),
 						Condition: "A",
-						Data: []ngmodels.AlertQuery{
+						Data: []apimodels.AlertQuery{
 							{
 								RefID: "A",
-								RelativeTimeRange: ngmodels.RelativeTimeRange{
-									From: ngmodels.Duration(time.Duration(5) * time.Hour),
-									To:   ngmodels.Duration(time.Duration(3) * time.Hour),
+								RelativeTimeRange: apimodels.RelativeTimeRange{
+									From: apimodels.Duration(time.Duration(5) * time.Hour),
+									To:   apimodels.Duration(time.Duration(3) * time.Hour),
 								},
 								DatasourceUID: expr.DatasourceUID,
 								Model: json.RawMessage(`{
@@ -963,12 +966,12 @@ func TestIntegrationAlertRuleCRUD(t *testing.T) {
 					GrafanaManagedAlert: &apimodels.PostableGrafanaRule{
 						Title:     "AlwaysFiring",
 						Condition: "A",
-						Data: []ngmodels.AlertQuery{
+						Data: []apimodels.AlertQuery{
 							{
 								RefID: "A",
-								RelativeTimeRange: ngmodels.RelativeTimeRange{
-									From: ngmodels.Duration(time.Duration(5) * time.Hour),
-									To:   ngmodels.Duration(time.Duration(3) * time.Hour),
+								RelativeTimeRange: apimodels.RelativeTimeRange{
+									From: apimodels.Duration(time.Duration(5) * time.Hour),
+									To:   apimodels.Duration(time.Duration(3) * time.Hour),
 								},
 								DatasourceUID: expr.DatasourceUID,
 								Model: json.RawMessage(`{
@@ -994,12 +997,12 @@ func TestIntegrationAlertRuleCRUD(t *testing.T) {
 					GrafanaManagedAlert: &apimodels.PostableGrafanaRule{
 						Title:     "AlwaysFiring",
 						Condition: "A",
-						Data: []ngmodels.AlertQuery{
+						Data: []apimodels.AlertQuery{
 							{
 								RefID: "A",
-								RelativeTimeRange: ngmodels.RelativeTimeRange{
-									From: ngmodels.Duration(time.Duration(5) * time.Hour),
-									To:   ngmodels.Duration(time.Duration(3) * time.Hour),
+								RelativeTimeRange: apimodels.RelativeTimeRange{
+									From: apimodels.Duration(time.Duration(5) * time.Hour),
+									To:   apimodels.Duration(time.Duration(3) * time.Hour),
 								},
 								DatasourceUID: expr.DatasourceUID,
 								Model: json.RawMessage(`{
@@ -1024,12 +1027,12 @@ func TestIntegrationAlertRuleCRUD(t *testing.T) {
 					GrafanaManagedAlert: &apimodels.PostableGrafanaRule{
 						Title:     "AlwaysFiring",
 						Condition: "A",
-						Data: []ngmodels.AlertQuery{
+						Data: []apimodels.AlertQuery{
 							{
 								RefID: "A",
-								RelativeTimeRange: ngmodels.RelativeTimeRange{
-									From: ngmodels.Duration(time.Duration(5) * time.Hour),
-									To:   ngmodels.Duration(time.Duration(3) * time.Hour),
+								RelativeTimeRange: apimodels.RelativeTimeRange{
+									From: apimodels.Duration(time.Duration(5) * time.Hour),
+									To:   apimodels.Duration(time.Duration(3) * time.Hour),
 								},
 								DatasourceUID: "unknown",
 								Model: json.RawMessage(`{
@@ -1040,7 +1043,18 @@ func TestIntegrationAlertRuleCRUD(t *testing.T) {
 						},
 					},
 				},
-				expectedMessage: "invalid rule specification at index [0]: failed to validate condition of alert rule AlwaysFiring: failed to build query 'A': data source not found",
+				expectedCode: func() int {
+					if setting.IsEnterprise {
+						return http.StatusUnauthorized
+					}
+					return http.StatusBadRequest
+				}(),
+				expectedMessage: func() string {
+					if setting.IsEnterprise {
+						return "user is not authorized to create a new alert rule 'AlwaysFiring' because the user does not have read permissions for one or many datasources the rule uses"
+					}
+					return "failed to update rule group: invalid alert rule 'AlwaysFiring': failed to build query 'A': data source not found"
+				}(),
 			},
 			{
 				desc:      "alert rule with invalid condition",
@@ -1054,12 +1068,12 @@ func TestIntegrationAlertRuleCRUD(t *testing.T) {
 					GrafanaManagedAlert: &apimodels.PostableGrafanaRule{
 						Title:     "AlwaysFiring",
 						Condition: "B",
-						Data: []ngmodels.AlertQuery{
+						Data: []apimodels.AlertQuery{
 							{
 								RefID: "A",
-								RelativeTimeRange: ngmodels.RelativeTimeRange{
-									From: ngmodels.Duration(time.Duration(5) * time.Hour),
-									To:   ngmodels.Duration(time.Duration(3) * time.Hour),
+								RelativeTimeRange: apimodels.RelativeTimeRange{
+									From: apimodels.Duration(time.Duration(5) * time.Hour),
+									To:   apimodels.Duration(time.Duration(3) * time.Hour),
 								},
 								DatasourceUID: expr.DatasourceUID,
 								Model: json.RawMessage(`{
@@ -1070,7 +1084,7 @@ func TestIntegrationAlertRuleCRUD(t *testing.T) {
 						},
 					},
 				},
-				expectedMessage: "invalid rule specification at index [0]: failed to validate condition of alert rule AlwaysFiring: condition B does not exist, must be one of [A]",
+				expectedMessage: "invalid rule specification at index [0]: invalid alert rule: condition B does not exist, must be one of [A]",
 			},
 		}
 
@@ -1089,8 +1103,11 @@ func TestIntegrationAlertRuleCRUD(t *testing.T) {
 				require.NoError(t, err)
 
 				assert.Equal(t, tc.expectedMessage, res.Message)
-
-				assert.Equal(t, http.StatusBadRequest, status)
+				expectedCode := tc.expectedCode
+				if expectedCode == 0 {
+					expectedCode = http.StatusBadRequest
+				}
+				assert.Equal(t, expectedCode, status)
 			})
 		}
 	}
@@ -1113,12 +1130,12 @@ func TestIntegrationAlertRuleCRUD(t *testing.T) {
 					GrafanaManagedAlert: &apimodels.PostableGrafanaRule{
 						Title:     "AlwaysFiring",
 						Condition: "A",
-						Data: []ngmodels.AlertQuery{
+						Data: []apimodels.AlertQuery{
 							{
 								RefID: "A",
-								RelativeTimeRange: ngmodels.RelativeTimeRange{
-									From: ngmodels.Duration(time.Duration(5) * time.Hour),
-									To:   ngmodels.Duration(time.Duration(3) * time.Hour),
+								RelativeTimeRange: apimodels.RelativeTimeRange{
+									From: apimodels.Duration(time.Duration(5) * time.Hour),
+									To:   apimodels.Duration(time.Duration(3) * time.Hour),
 								},
 								DatasourceUID: expr.DatasourceUID,
 								Model: json.RawMessage(`{
@@ -1133,12 +1150,12 @@ func TestIntegrationAlertRuleCRUD(t *testing.T) {
 					GrafanaManagedAlert: &apimodels.PostableGrafanaRule{
 						Title:     "AlwaysFiringButSilenced",
 						Condition: "A",
-						Data: []ngmodels.AlertQuery{
+						Data: []apimodels.AlertQuery{
 							{
 								RefID: "A",
-								RelativeTimeRange: ngmodels.RelativeTimeRange{
-									From: ngmodels.Duration(time.Duration(5) * time.Hour),
-									To:   ngmodels.Duration(time.Duration(3) * time.Hour),
+								RelativeTimeRange: apimodels.RelativeTimeRange{
+									From: apimodels.Duration(time.Duration(5) * time.Hour),
+									To:   apimodels.Duration(time.Duration(3) * time.Hour),
 								},
 								DatasourceUID: expr.DatasourceUID,
 								Model: json.RawMessage(`{
@@ -1300,12 +1317,12 @@ func TestIntegrationAlertRuleCRUD(t *testing.T) {
 						UID:       "unknown",
 						Title:     "AlwaysNormal",
 						Condition: "A",
-						Data: []ngmodels.AlertQuery{
+						Data: []apimodels.AlertQuery{
 							{
 								RefID: "A",
-								RelativeTimeRange: ngmodels.RelativeTimeRange{
-									From: ngmodels.Duration(time.Duration(5) * time.Hour),
-									To:   ngmodels.Duration(time.Duration(3) * time.Hour),
+								RelativeTimeRange: apimodels.RelativeTimeRange{
+									From: apimodels.Duration(time.Duration(5) * time.Hour),
+									To:   apimodels.Duration(time.Duration(3) * time.Hour),
 								},
 								DatasourceUID: expr.DatasourceUID,
 								Model: json.RawMessage(`{
@@ -1324,7 +1341,7 @@ func TestIntegrationAlertRuleCRUD(t *testing.T) {
 
 		status, body := apiClient.PostRulesGroup(t, "default", &rules)
 		assert.Equal(t, http.StatusNotFound, status)
-		var res map[string]interface{}
+		var res map[string]any
 		assert.NoError(t, json.Unmarshal([]byte(body), &res))
 		require.Equal(t, "failed to update rule group: failed to update rule with UID unknown because could not find alert rule", res["message"])
 
@@ -1373,12 +1390,12 @@ func TestIntegrationAlertRuleCRUD(t *testing.T) {
 						UID:       ruleUID,
 						Title:     "AlwaysNormal",
 						Condition: "A",
-						Data: []ngmodels.AlertQuery{
+						Data: []apimodels.AlertQuery{
 							{
 								RefID: "A",
-								RelativeTimeRange: ngmodels.RelativeTimeRange{
-									From: ngmodels.Duration(time.Duration(5) * time.Hour),
-									To:   ngmodels.Duration(time.Duration(3) * time.Hour),
+								RelativeTimeRange: apimodels.RelativeTimeRange{
+									From: apimodels.Duration(time.Duration(5) * time.Hour),
+									To:   apimodels.Duration(time.Duration(3) * time.Hour),
 								},
 								DatasourceUID: expr.DatasourceUID,
 								Model: json.RawMessage(`{
@@ -1407,12 +1424,12 @@ func TestIntegrationAlertRuleCRUD(t *testing.T) {
 						UID:       ruleUID,
 						Title:     "AlwaysAlerting",
 						Condition: "A",
-						Data: []ngmodels.AlertQuery{
+						Data: []apimodels.AlertQuery{
 							{
 								RefID: "A",
-								RelativeTimeRange: ngmodels.RelativeTimeRange{
-									From: ngmodels.Duration(time.Duration(5) * time.Hour),
-									To:   ngmodels.Duration(time.Duration(3) * time.Hour),
+								RelativeTimeRange: apimodels.RelativeTimeRange{
+									From: apimodels.Duration(time.Duration(5) * time.Hour),
+									To:   apimodels.Duration(time.Duration(3) * time.Hour),
 								},
 								DatasourceUID: expr.DatasourceUID,
 								Model: json.RawMessage(`{
@@ -1430,7 +1447,7 @@ func TestIntegrationAlertRuleCRUD(t *testing.T) {
 		}
 		status, body := apiClient.PostRulesGroup(t, "default", &rules)
 		assert.Equal(t, http.StatusBadRequest, status)
-		var res map[string]interface{}
+		var res map[string]any
 		require.NoError(t, json.Unmarshal([]byte(body), &res))
 		require.Equal(t, fmt.Sprintf("rule [1] has UID %s that is already assigned to another rule at index 0", ruleUID), res["message"])
 
@@ -1481,12 +1498,12 @@ func TestIntegrationAlertRuleCRUD(t *testing.T) {
 						UID:       ruleUID, // Including the UID in the payload makes the endpoint update the existing rule.
 						Title:     "AlwaysNormal",
 						Condition: "A",
-						Data: []ngmodels.AlertQuery{
+						Data: []apimodels.AlertQuery{
 							{
 								RefID: "A",
-								RelativeTimeRange: ngmodels.RelativeTimeRange{
-									From: ngmodels.Duration(time.Duration(5) * time.Hour),
-									To:   ngmodels.Duration(time.Duration(3) * time.Hour),
+								RelativeTimeRange: apimodels.RelativeTimeRange{
+									From: apimodels.Duration(time.Duration(5) * time.Hour),
+									To:   apimodels.Duration(time.Duration(3) * time.Hour),
 								},
 								DatasourceUID: expr.DatasourceUID,
 								Model: json.RawMessage(`{
@@ -1599,12 +1616,12 @@ func TestIntegrationAlertRuleCRUD(t *testing.T) {
 						UID:       ruleUID, // Including the UID in the payload makes the endpoint update the existing rule.
 						Title:     "AlwaysNormal",
 						Condition: "A",
-						Data: []ngmodels.AlertQuery{
+						Data: []apimodels.AlertQuery{
 							{
 								RefID: "A",
-								RelativeTimeRange: ngmodels.RelativeTimeRange{
-									From: ngmodels.Duration(time.Duration(5) * time.Hour),
-									To:   ngmodels.Duration(time.Duration(3) * time.Hour),
+								RelativeTimeRange: apimodels.RelativeTimeRange{
+									From: apimodels.Duration(time.Duration(5) * time.Hour),
+									To:   apimodels.Duration(time.Duration(3) * time.Hour),
 								},
 								DatasourceUID: expr.DatasourceUID,
 								Model: json.RawMessage(`{
@@ -1796,7 +1813,7 @@ func TestIntegrationAlertRuleCRUD(t *testing.T) {
 			require.NoError(t, err)
 
 			require.Equal(t, http.StatusAccepted, resp.StatusCode)
-			var res map[string]interface{}
+			var res map[string]any
 			require.NoError(t, json.Unmarshal(b, &res))
 			require.Equal(t, "rules deleted", res["message"])
 		})
@@ -1958,12 +1975,12 @@ func TestIntegrationQuota(t *testing.T) {
 					GrafanaManagedAlert: &apimodels.PostableGrafanaRule{
 						Title:     "One more alert rule",
 						Condition: "A",
-						Data: []ngmodels.AlertQuery{
+						Data: []apimodels.AlertQuery{
 							{
 								RefID: "A",
-								RelativeTimeRange: ngmodels.RelativeTimeRange{
-									From: ngmodels.Duration(time.Duration(5) * time.Hour),
-									To:   ngmodels.Duration(time.Duration(3) * time.Hour),
+								RelativeTimeRange: apimodels.RelativeTimeRange{
+									From: apimodels.Duration(time.Duration(5) * time.Hour),
+									To:   apimodels.Duration(time.Duration(3) * time.Hour),
 								},
 								DatasourceUID: expr.DatasourceUID,
 								Model: json.RawMessage(`{
@@ -1978,7 +1995,7 @@ func TestIntegrationQuota(t *testing.T) {
 		}
 		status, body := apiClient.PostRulesGroup(t, "default", &rules)
 		assert.Equal(t, http.StatusForbidden, status)
-		var res map[string]interface{}
+		var res map[string]any
 		require.NoError(t, json.Unmarshal([]byte(body), &res))
 		require.Equal(t, "quota has been exceeded", res["message"])
 	})
@@ -1993,12 +2010,12 @@ func TestIntegrationQuota(t *testing.T) {
 					GrafanaManagedAlert: &apimodels.PostableGrafanaRule{
 						Title:     "Updated alert rule",
 						Condition: "A",
-						Data: []ngmodels.AlertQuery{
+						Data: []apimodels.AlertQuery{
 							{
 								RefID: "A",
-								RelativeTimeRange: ngmodels.RelativeTimeRange{
-									From: ngmodels.Duration(time.Duration(5) * time.Hour),
-									To:   ngmodels.Duration(time.Duration(3) * time.Hour),
+								RelativeTimeRange: apimodels.RelativeTimeRange{
+									From: apimodels.Duration(time.Duration(5) * time.Hour),
+									To:   apimodels.Duration(time.Duration(3) * time.Hour),
 								},
 								DatasourceUID: expr.DatasourceUID,
 								Model: json.RawMessage(`{
@@ -2112,237 +2129,6 @@ func TestIntegrationEval(t *testing.T) {
 
 	// test eval conditions
 	testCases := []struct {
-		desc               string
-		payload            string
-		expectedStatusCode func() int
-		expectedResponse   func() string
-		expectedMessage    func() string
-	}{
-		{
-			desc: "alerting condition",
-			payload: `
-			{
-				"grafana_condition": {
-				"condition": "A",
-				"data": [
-					{
-						"refId": "A",
-						"relativeTimeRange": {
-							"from": 18000,
-							"to": 10800
-						},
-						"datasourceUid":"__expr__",
-						"model": {
-							"type":"math",
-							"expression":"1 < 2"
-						}
-					}
-				],
-				"now": "2021-04-11T14:38:14Z"
-				}
-			}
-			`,
-			expectedMessage:    func() string { return "" },
-			expectedStatusCode: func() int { return http.StatusOK },
-			expectedResponse: func() string {
-				return `{
-			"instances": [
-			  {
-				"schema": {
-				  "name": "evaluation results",
-				  "fields": [
-					{
-					  "name": "State",
-					  "type": "string",
-					  "typeInfo": {
-						"frame": "string"
-					  }
-					},
-					{
-					  "name": "Info",
-					  "type": "string",
-					  "typeInfo": {
-					    "frame": "string"
-					  }
-					}
-				  ]
-				},
-				"data": {
-				  "values": [
-					[
-					  "Alerting"
-					],
-					[
-					  "[ var='A' labels={} value=1 ]"
-					]
-				  ]
-				}
-			  }
-			]
-		  }`
-			},
-		},
-		{
-			desc: "normal condition",
-			payload: `
-			{
-				"grafana_condition": {
-				"condition": "A",
-				"data": [
-					{
-						"refId": "A",
-						"relativeTimeRange": {
-							"from": 18000,
-							"to": 10800
-						},
-						"datasourceUid": "__expr__",
-						"model": {
-							"type":"math",
-							"expression":"1 > 2"
-						}
-					}
-				],
-				"now": "2021-04-11T14:38:14Z"
-				}
-			}
-			`,
-			expectedMessage:    func() string { return "" },
-			expectedStatusCode: func() int { return http.StatusOK },
-			expectedResponse: func() string {
-				return `{
-			"instances": [
-			  {
-				"schema": {
-				  "name": "evaluation results",
-				  "fields": [
-					{
-					  "name": "State",
-					  "type": "string",
-					  "typeInfo": {
-						"frame": "string"
-					  }
-					},
-					{
-					  "name": "Info",
-					  "type": "string",
-					  "typeInfo": {
-					    "frame": "string"
-					  }
-					}
-				  ]
-				},
-				"data": {
-				  "values": [
-					[
-					  "Normal"
-					],
-					[
-					  "[ var='A' labels={} value=0 ]"
-					]
-				  ]
-				}
-			  }
-			]
-		  }`
-			},
-		},
-		{
-			desc: "condition not found in any query or expression",
-			payload: `
-			{
-				"grafana_condition": {
-				"condition": "B",
-				"data": [
-					{
-						"refId": "A",
-						"relativeTimeRange": {
-							"from": 18000,
-							"to": 10800
-						},
-						"datasourceUid": "__expr__",
-						"model": {
-							"type":"math",
-							"expression":"1 > 2"
-						}
-					}
-				],
-				"now": "2021-04-11T14:38:14Z"
-				}
-			}
-			`,
-			expectedStatusCode: func() int { return http.StatusBadRequest },
-			expectedMessage: func() string {
-				return "invalid condition: condition B does not exist, must be one of [A]"
-			},
-			expectedResponse: func() string { return "" },
-		},
-		{
-			desc: "unknown query datasource",
-			payload: `
-			{
-				"grafana_condition": {
-				"condition": "A",
-				"data": [
-					{
-						"refId": "A",
-						"relativeTimeRange": {
-							"from": 18000,
-							"to": 10800
-						},
-						"datasourceUid": "unknown",
-						"model": {
-						}
-					}
-				],
-				"now": "2021-04-11T14:38:14Z"
-				}
-			}
-			`,
-			expectedStatusCode: func() int {
-				if setting.IsEnterprise {
-					return http.StatusUnauthorized
-				}
-				return http.StatusBadRequest
-			},
-			expectedMessage: func() string {
-				if setting.IsEnterprise {
-					return "user is not authorized to query one or many data sources used by the rule"
-				}
-				return "invalid condition: failed to build query 'A': data source not found"
-			},
-			expectedResponse: func() string { return "" },
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.desc, func(t *testing.T) {
-			u := fmt.Sprintf("http://grafana:password@%s/api/v1/rule/test/grafana", grafanaListedAddr)
-			r := strings.NewReader(tc.payload)
-			// nolint:gosec
-			resp, err := http.Post(u, "application/json", r)
-			require.NoError(t, err)
-			t.Cleanup(func() {
-				err := resp.Body.Close()
-				require.NoError(t, err)
-			})
-			b, err := io.ReadAll(resp.Body)
-			require.NoError(t, err)
-			res := Response{}
-			err = json.Unmarshal(b, &res)
-			require.NoError(t, err)
-
-			assert.Equal(t, tc.expectedStatusCode(), resp.StatusCode)
-			if tc.expectedResponse() != "" {
-				require.JSONEq(t, tc.expectedResponse(), string(b))
-			}
-			if tc.expectedMessage() != "" {
-				assert.Equal(t, tc.expectedMessage(), res.Message)
-			}
-		})
-	}
-
-	// test eval queries and expressions
-	testCases = []struct {
 		desc               string
 		payload            string
 		expectedStatusCode func() int

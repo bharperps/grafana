@@ -1,15 +1,16 @@
 // Libraries
 import { AnyAction, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import React, { useCallback, useEffect, useMemo, useReducer } from 'react';
-import { createHtmlPortalNode, InPortal, OutPortal } from 'react-reverse-portal';
 import { useLocation, useRouteMatch } from 'react-router-dom';
 
-import { AppEvents, AppPlugin, AppPluginMeta, NavModel, NavModelItem, PluginType } from '@grafana/data';
+import { AppEvents, AppPlugin, AppPluginMeta, NavModel, NavModelItem, OrgRole, PluginType } from '@grafana/data';
 import { config, locationSearchToObject } from '@grafana/runtime';
-import { getNotFoundNav, getWarningNav, getExceptionNav } from 'app/angular/services/nav_model_srv';
+import { Alert } from '@grafana/ui';
 import { Page } from 'app/core/components/Page/Page';
 import PageLoader from 'app/core/components/PageLoader/PageLoader';
-import { appEvents } from 'app/core/core';
+import { useGrafana } from 'app/core/context/GrafanaContext';
+import { appEvents, contextSrv } from 'app/core/core';
+import { getNotFoundNav, getWarningNav, getExceptionNav } from 'app/core/navigation/errorModels';
 
 import { getPluginSettings } from '../pluginSettings';
 import { importAppPlugin } from '../plugin_loader';
@@ -37,12 +38,12 @@ export function AppRootPage({ pluginId, pluginNavSection }: Props) {
   const match = useRouteMatch();
   const location = useLocation();
   const [state, dispatch] = useReducer(stateSlice.reducer, initialState);
-  const portalNode = useMemo(() => createHtmlPortalNode(), []);
   const currentUrl = config.appSubUrl + location.pathname + location.search;
   const { plugin, loading, pluginNav } = state;
   const navModel = buildPluginSectionNav(pluginNavSection, pluginNav, currentUrl);
   const queryParams = useMemo(() => locationSearchToObject(location.search), [location.search]);
   const context = useMemo(() => buildPluginPageContext(navModel), [navModel]);
+  const grafanaContext = useGrafana();
 
   useEffect(() => {
     loadAppPlugin(pluginId, dispatch);
@@ -54,7 +55,13 @@ export function AppRootPage({ pluginId, pluginNavSection }: Props) {
   );
 
   if (!plugin || pluginId !== plugin.meta.id) {
-    return <Page navModel={navModel}>{loading && <PageLoader />}</Page>;
+    // Use current layout while loading to reduce flickering
+    const currentLayout = grafanaContext.chrome.state.getValue().layout;
+    return (
+      <Page navModel={navModel} pageNav={{ text: '' }} layout={currentLayout}>
+        {loading && <PageLoader />}
+      </Page>
+    );
   }
 
   if (!plugin.root) {
@@ -75,23 +82,51 @@ export function AppRootPage({ pluginId, pluginNavSection }: Props) {
     />
   );
 
-  if (config.featureToggles.topnav && !pluginNav) {
+  // Because of the fallback at plugin routes, we need to check
+  // if the user has permissions to see the plugin page.
+  const userHasPermissionsToPluginPage = () => {
+    // Check if plugin does not have any configurations or the user is Grafana Admin
+    if (!plugin.meta?.includes || contextSrv.isGrafanaAdmin || contextSrv.user.orgRole === OrgRole.Admin) {
+      return true;
+    }
+
+    const pluginInclude = plugin.meta?.includes.find((include) => include.path === pluginRoot.props.path);
+    // Check if include configuration contains current path
+    if (!pluginInclude) {
+      return true;
+    }
+    const pathRole: string = pluginInclude?.role || '';
+    // Check if role exists  and give access to Editor to be able to see Viewer pages
+    if (!pathRole || (contextSrv.isEditor && pathRole === OrgRole.Viewer)) {
+      return true;
+    }
+    return contextSrv.hasRole(pathRole);
+  };
+
+  const AccessDenied = () => {
+    return (
+      <Alert severity="warning" title="Access denied">
+        You do not have permission to see this page.
+      </Alert>
+    );
+  };
+
+  if (!userHasPermissionsToPluginPage()) {
+    return <AccessDenied />;
+  }
+
+  if (!pluginNav) {
     return <PluginPageContext.Provider value={context}>{pluginRoot}</PluginPageContext.Provider>;
   }
 
   return (
     <>
-      <InPortal node={portalNode}>{pluginRoot}</InPortal>
       {navModel ? (
         <Page navModel={navModel} pageNav={pluginNav?.node}>
-          <Page.Contents isLoading={loading}>
-            <OutPortal node={portalNode} />
-          </Page.Contents>
+          <Page.Contents isLoading={loading}>{pluginRoot}</Page.Contents>
         </Page>
       ) : (
-        <Page>
-          <OutPortal node={portalNode} />
-        </Page>
+        <Page>{pluginRoot}</Page>
       )}
     </>
   );
@@ -112,8 +147,7 @@ const stateSlice = createSlice({
           ...pluginNav,
           node: {
             ...pluginNav.main,
-            // Because breadcumbs code is also used to set title when topnav should only set hideFromBreadcrumbs when topnav is enabled
-            hideFromBreadcrumbs: config.featureToggles.topnav,
+            hideFromBreadcrumbs: true,
           },
         };
       }

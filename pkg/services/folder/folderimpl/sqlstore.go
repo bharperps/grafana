@@ -5,10 +5,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/grafana/pkg/infra/db"
 	"github.com/grafana/grafana/pkg/infra/log"
-	"github.com/grafana/grafana/pkg/infra/slugify"
-	"github.com/grafana/grafana/pkg/services/dashboards"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
 	"github.com/grafana/grafana/pkg/services/folder"
 	"github.com/grafana/grafana/pkg/setting"
@@ -43,10 +42,10 @@ func (ss *sqlStore) Create(ctx context.Context, cmd folder.CreateFolderCommand) 
 	var lastInsertedID int64
 	err := ss.db.WithDbSession(ctx, func(sess *db.Session) error {
 		var sql string
-		var args []interface{}
+		var args []any
 		if cmd.ParentUID == "" {
 			sql = "INSERT INTO folder(org_id, uid, title, description, created, updated) VALUES(?, ?, ?, ?, ?, ?)"
-			args = []interface{}{cmd.OrgID, cmd.UID, cmd.Title, cmd.Description, time.Now(), time.Now()}
+			args = []any{cmd.OrgID, cmd.UID, cmd.Title, cmd.Description, time.Now(), time.Now()}
 		} else {
 			if cmd.ParentUID != folder.GeneralFolderUID {
 				if _, err := ss.Get(ctx, folder.GetFolderQuery{
@@ -57,7 +56,7 @@ func (ss *sqlStore) Create(ctx context.Context, cmd folder.CreateFolderCommand) 
 				}
 			}
 			sql = "INSERT INTO folder(org_id, uid, parent_uid, title, description, created, updated) VALUES(?, ?, ?, ?, ?, ?, ?)"
-			args = []interface{}{cmd.OrgID, cmd.UID, cmd.ParentUID, cmd.Title, cmd.Description, time.Now(), time.Now()}
+			args = []any{cmd.OrgID, cmd.UID, cmd.ParentUID, cmd.Title, cmd.Description, time.Now(), time.Now()}
 		}
 
 		var err error
@@ -74,7 +73,7 @@ func (ss *sqlStore) Create(ctx context.Context, cmd folder.CreateFolderCommand) 
 		}
 		return nil
 	})
-	return foldr, err
+	return foldr.WithURL(), err
 }
 
 func (ss *sqlStore) Delete(ctx context.Context, uid string, orgID int64) error {
@@ -92,11 +91,15 @@ func (ss *sqlStore) Update(ctx context.Context, cmd folder.UpdateFolderCommand) 
 	uid := cmd.UID
 
 	var foldr *folder.Folder
+
+	if cmd.NewDescription == nil && cmd.NewTitle == nil && cmd.NewParentUID == nil {
+		return nil, folder.ErrBadRequest.Errorf("nothing to update")
+	}
 	err := ss.db.WithDbSession(ctx, func(sess *db.Session) error {
 		sql := strings.Builder{}
-		sql.Write([]byte("UPDATE folder SET "))
+		sql.WriteString("UPDATE folder SET ")
 		columnsToUpdate := []string{"updated = ?"}
-		args := []interface{}{updated}
+		args := []any{updated}
 		if cmd.NewDescription != nil {
 			columnsToUpdate = append(columnsToUpdate, "description = ?")
 			args = append(args, *cmd.NewDescription)
@@ -107,26 +110,24 @@ func (ss *sqlStore) Update(ctx context.Context, cmd folder.UpdateFolderCommand) 
 			args = append(args, *cmd.NewTitle)
 		}
 
-		if cmd.NewUID != nil {
-			columnsToUpdate = append(columnsToUpdate, "uid = ?")
-			uid = *cmd.NewUID
-			args = append(args, *cmd.NewUID)
-		}
-
 		if cmd.NewParentUID != nil {
-			columnsToUpdate = append(columnsToUpdate, "parent_uid = ?")
-			args = append(args, *cmd.NewParentUID)
+			if *cmd.NewParentUID == "" {
+				columnsToUpdate = append(columnsToUpdate, "parent_uid = NULL")
+			} else {
+				columnsToUpdate = append(columnsToUpdate, "parent_uid = ?")
+				args = append(args, *cmd.NewParentUID)
+			}
 		}
 
 		if len(columnsToUpdate) == 0 {
 			return folder.ErrBadRequest.Errorf("no columns to update")
 		}
 
-		sql.Write([]byte(strings.Join(columnsToUpdate, ", ")))
-		sql.Write([]byte(" WHERE uid = ? AND org_id = ?"))
+		sql.WriteString(strings.Join(columnsToUpdate, ", "))
+		sql.WriteString(" WHERE uid = ? AND org_id = ?")
 		args = append(args, cmd.UID, cmd.OrgID)
 
-		args = append([]interface{}{sql.String()}, args...)
+		args = append([]any{sql.String()}, args...)
 
 		res, err := sess.Exec(args...)
 		if err != nil {
@@ -151,7 +152,7 @@ func (ss *sqlStore) Update(ctx context.Context, cmd folder.UpdateFolderCommand) 
 		return nil
 	})
 
-	return foldr, err
+	return foldr.WithURL(), err
 }
 
 func (ss *sqlStore) Get(ctx context.Context, q folder.GetFolderQuery) (*folder.Folder, error) {
@@ -165,7 +166,15 @@ func (ss *sqlStore) Get(ctx context.Context, q folder.GetFolderQuery) (*folder.F
 		case q.ID != nil:
 			exists, err = sess.SQL("SELECT * FROM folder WHERE id = ?", q.ID).Get(foldr)
 		case q.Title != nil:
-			exists, err = sess.SQL("SELECT * FROM folder WHERE title = ? AND org_id = ?", q.Title, q.OrgID).Get(foldr)
+			args := []any{*q.Title, q.OrgID}
+			s := "SELECT * FROM folder WHERE title = ? AND org_id = ?"
+			if q.ParentUID != nil {
+				s = s + " AND parent_uid = ?"
+				args = append(args, *q.ParentUID)
+			} else {
+				s = s + " AND parent_uid IS NULL"
+			}
+			exists, err = sess.SQL(s, args...).Get(foldr)
 		default:
 			return folder.ErrBadRequest.Errorf("one of ID, UID, or Title must be included in the command")
 		}
@@ -177,11 +186,13 @@ func (ss *sqlStore) Get(ctx context.Context, q folder.GetFolderQuery) (*folder.F
 		}
 		return nil
 	})
-	foldr.URL = dashboards.GetFolderURL(foldr.UID, slugify.Slugify(foldr.Title))
-	return foldr, err
+	return foldr.WithURL(), err
 }
 
 func (ss *sqlStore) GetParents(ctx context.Context, q folder.GetParentsQuery) ([]*folder.Folder, error) {
+	if q.UID == "" {
+		return []*folder.Folder{}, nil
+	}
 	var folders []*folder.Folder
 
 	recQuery := `
@@ -207,6 +218,13 @@ func (ss *sqlStore) GetParents(ctx context.Context, q folder.GetParentsQuery) ([
 		}); err != nil {
 			return nil, err
 		}
+
+		if err := concurrency.ForEachJob(ctx, len(folders), len(folders), func(ctx context.Context, idx int) error {
+			folders[idx].WithURL()
+			return nil
+		}); err != nil {
+			ss.log.Debug("failed to set URL to folders", "err", err)
+		}
 	default:
 		ss.log.Debug("recursive CTE subquery is not supported; it fallbacks to the iterative implementation")
 		return ss.getParentsMySQL(ctx, q)
@@ -226,12 +244,12 @@ func (ss *sqlStore) GetChildren(ctx context.Context, q folder.GetChildrenQuery) 
 
 	err := ss.db.WithDbSession(ctx, func(sess *db.Session) error {
 		sql := strings.Builder{}
-		args := make([]interface{}, 0, 2)
+		args := make([]any, 0, 2)
 		if q.UID == "" {
-			sql.Write([]byte("SELECT * FROM folder WHERE parent_uid IS NULL AND org_id=?"))
+			sql.WriteString("SELECT * FROM folder WHERE parent_uid IS NULL AND org_id=? ORDER BY title ASC")
 			args = append(args, q.OrgID)
 		} else {
-			sql.Write([]byte("SELECT * FROM folder WHERE parent_uid=? AND org_id=?"))
+			sql.WriteString("SELECT * FROM folder WHERE parent_uid=? AND org_id=? ORDER BY title ASC")
 			args = append(args, q.UID, q.OrgID)
 		}
 
@@ -240,11 +258,18 @@ func (ss *sqlStore) GetChildren(ctx context.Context, q folder.GetChildrenQuery) 
 			if q.Page > 0 {
 				offset = q.Limit * (q.Page - 1)
 			}
-			sql.Write([]byte(ss.db.GetDialect().LimitOffset(q.Limit, offset)))
+			sql.WriteString(ss.db.GetDialect().LimitOffset(q.Limit, offset))
 		}
 		err := sess.SQL(sql.String(), args...).Find(&folders)
 		if err != nil {
 			return folder.ErrDatabaseError.Errorf("failed to get folder children: %w", err)
+		}
+
+		if err := concurrency.ForEachJob(ctx, len(folders), len(folders), func(ctx context.Context, idx int) error {
+			folders[idx].WithURL()
+			return nil
+		}); err != nil {
+			ss.log.Debug("failed to set URL to folders", "err", err)
 		}
 		return nil
 	})
@@ -270,10 +295,11 @@ func (ss *sqlStore) getParentsMySQL(ctx context.Context, cmd folder.GetParentsQu
 			if !ok {
 				break
 			}
-			folders = append(folders, f)
+
+			folders = append(folders, f.WithURL())
 			uid = f.ParentUID
 			if len(folders) > folder.MaxNestedFolderDepth {
-				return folder.ErrFolderTooDeep
+				return folder.ErrMaximumDepthReached.Errorf("failed to get parent folders iteratively")
 			}
 		}
 		return nil

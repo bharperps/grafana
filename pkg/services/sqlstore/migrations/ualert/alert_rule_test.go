@@ -5,9 +5,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/grafana/pkg/components/simplejson"
+	"github.com/grafana/grafana/pkg/infra/log/logtest"
+	"github.com/grafana/grafana/pkg/services/ngalert/models"
 )
 
 func TestMigrateAlertRuleQueries(t *testing.T) {
@@ -19,18 +22,50 @@ func TestMigrateAlertRuleQueries(t *testing.T) {
 	}{
 		{
 			name:     "when a query has a sub query - it is extracted",
-			input:    simplejson.NewFromAny(map[string]interface{}{"targetFull": "thisisafullquery", "target": "ahalfquery"}),
+			input:    simplejson.NewFromAny(map[string]any{"targetFull": "thisisafullquery", "target": "ahalfquery"}),
 			expected: `{"target":"thisisafullquery"}`,
 		},
 		{
 			name:     "when a query does not have a sub query - it no-ops",
-			input:    simplejson.NewFromAny(map[string]interface{}{"target": "ahalfquery"}),
+			input:    simplejson.NewFromAny(map[string]any{"target": "ahalfquery"}),
 			expected: `{"target":"ahalfquery"}`,
 		},
 		{
 			name:     "when query was hidden, it removes the flag",
-			input:    simplejson.NewFromAny(map[string]interface{}{"hide": true}),
+			input:    simplejson.NewFromAny(map[string]any{"hide": true}),
 			expected: `{}`,
+		},
+		{
+			name: "when prometheus both type query, convert to range",
+			input: simplejson.NewFromAny(map[string]any{
+				"datasource": map[string]string{
+					"type": "prometheus",
+				},
+				"instant": true,
+				"range":   true,
+			}),
+			expected: `{"datasource":{"type":"prometheus"},"instant":false,"range":true}`,
+		},
+		{
+			name: "when prometheus instant type query, do nothing",
+			input: simplejson.NewFromAny(map[string]any{
+				"datasource": map[string]string{
+					"type": "prometheus",
+				},
+				"instant": true,
+			}),
+			expected: `{"datasource":{"type":"prometheus"},"instant":true}`,
+		},
+		{
+			name: "when non-prometheus with instant and range, do nothing",
+			input: simplejson.NewFromAny(map[string]any{
+				"datasource": map[string]string{
+					"type": "something",
+				},
+				"instant": true,
+				"range":   true,
+			}),
+			expected: `{"datasource":{"type":"something"},"instant":true,"range":true}`,
 		},
 	}
 
@@ -38,7 +73,7 @@ func TestMigrateAlertRuleQueries(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			model, err := tt.input.Encode()
 			require.NoError(t, err)
-			queries, err := migrateAlertRuleQueries([]alertQuery{{Model: model}})
+			queries, err := migrateAlertRuleQueries(&logtest.Fake{}, []alertQuery{{Model: model}})
 			if tt.err != nil {
 				require.Error(t, err)
 				require.EqualError(t, err, tt.err.Error())
@@ -93,7 +128,7 @@ func TestMakeAlertRule(t *testing.T) {
 			da := createTestDashAlert()
 			cnd := createTestDashAlertCondition()
 
-			ar, err := m.makeAlertRule(cnd, da, "folder")
+			ar, err := m.makeAlertRule(&logtest.Fake{}, cnd, da, "folder")
 
 			require.NoError(t, err)
 			require.Equal(t, da.Name, ar.Title)
@@ -106,7 +141,7 @@ func TestMakeAlertRule(t *testing.T) {
 			da.Name = strings.Repeat("a", DefaultFieldMaxLength+1)
 			cnd := createTestDashAlertCondition()
 
-			ar, err := m.makeAlertRule(cnd, da, "folder")
+			ar, err := m.makeAlertRule(&logtest.Fake{}, cnd, da, "folder")
 
 			require.NoError(t, err)
 			require.Len(t, ar.Title, DefaultFieldMaxLength)
@@ -123,7 +158,7 @@ func TestMakeAlertRule(t *testing.T) {
 		da := createTestDashAlert()
 		cnd := createTestDashAlertCondition()
 
-		ar, err := m.makeAlertRule(cnd, da, "folder")
+		ar, err := m.makeAlertRule(&logtest.Fake{}, cnd, da, "folder")
 		require.NoError(t, err)
 		require.False(t, ar.IsPaused)
 	})
@@ -134,9 +169,45 @@ func TestMakeAlertRule(t *testing.T) {
 		da.State = "paused"
 		cnd := createTestDashAlertCondition()
 
-		ar, err := m.makeAlertRule(cnd, da, "folder")
+		ar, err := m.makeAlertRule(&logtest.Fake{}, cnd, da, "folder")
 		require.NoError(t, err)
 		require.True(t, ar.IsPaused)
+	})
+
+	t.Run("use default if execution of NoData is not known", func(t *testing.T) {
+		m := newTestMigration(t)
+		da := createTestDashAlert()
+		da.ParsedSettings.NoDataState = uuid.NewString()
+		cnd := createTestDashAlertCondition()
+
+		ar, err := m.makeAlertRule(&logtest.Fake{}, cnd, da, "folder")
+		require.Nil(t, err)
+		require.Equal(t, string(models.NoData), ar.NoDataState)
+	})
+
+	t.Run("use default if execution of Error is not known", func(t *testing.T) {
+		m := newTestMigration(t)
+		da := createTestDashAlert()
+		da.ParsedSettings.ExecutionErrorState = uuid.NewString()
+		cnd := createTestDashAlertCondition()
+
+		ar, err := m.makeAlertRule(&logtest.Fake{}, cnd, da, "folder")
+		require.Nil(t, err)
+		require.Equal(t, string(models.ErrorErrState), ar.ExecErrState)
+	})
+
+	t.Run("migrate message template", func(t *testing.T) {
+		m := newTestMigration(t)
+		da := createTestDashAlert()
+		da.Message = "Instance ${instance} is down"
+		cnd := createTestDashAlertCondition()
+
+		ar, err := m.makeAlertRule(&logtest.Fake{}, cnd, da, "folder")
+		require.Nil(t, err)
+		expected :=
+			"{{- $mergedLabels := mergeLabelValues $values -}}\n" +
+				"Instance {{$mergedLabels.instance}} is down"
+		require.Equal(t, expected, ar.Annotations["message"])
 	})
 }
 

@@ -13,27 +13,25 @@ var _ InstanceStore = &FakeInstanceStore{}
 
 type FakeInstanceStore struct {
 	mtx         sync.Mutex
-	RecordedOps []interface{}
+	RecordedOps []any
 }
 
 type FakeInstanceStoreOp struct {
 	Name string
-	Args []interface{}
+	Args []any
 }
 
-func (f *FakeInstanceStore) ListAlertInstances(_ context.Context, q *models.ListAlertInstancesQuery) error {
+func (f *FakeInstanceStore) ListAlertInstances(_ context.Context, q *models.ListAlertInstancesQuery) ([]*models.AlertInstance, error) {
 	f.mtx.Lock()
 	defer f.mtx.Unlock()
 	f.RecordedOps = append(f.RecordedOps, *q)
-	return nil
+	return nil, nil
 }
 
-func (f *FakeInstanceStore) SaveAlertInstances(_ context.Context, q ...models.AlertInstance) error {
+func (f *FakeInstanceStore) SaveAlertInstance(_ context.Context, q models.AlertInstance) error {
 	f.mtx.Lock()
 	defer f.mtx.Unlock()
-	for _, inst := range q {
-		f.RecordedOps = append(f.RecordedOps, inst)
-	}
+	f.RecordedOps = append(f.RecordedOps, q)
 	return nil
 }
 
@@ -43,7 +41,7 @@ func (f *FakeInstanceStore) DeleteAlertInstances(ctx context.Context, q ...model
 	f.mtx.Lock()
 	defer f.mtx.Unlock()
 	f.RecordedOps = append(f.RecordedOps, FakeInstanceStoreOp{
-		Name: "DeleteAlertInstances", Args: []interface{}{
+		Name: "DeleteAlertInstances", Args: []any{
 			ctx,
 			q,
 		},
@@ -57,8 +55,8 @@ func (f *FakeInstanceStore) DeleteAlertInstancesByRule(ctx context.Context, key 
 
 type FakeRuleReader struct{}
 
-func (f *FakeRuleReader) ListAlertRules(_ context.Context, q *models.ListAlertRulesQuery) error {
-	return nil
+func (f *FakeRuleReader) ListAlertRules(_ context.Context, q *models.ListAlertRulesQuery) (models.RulesGroup, error) {
+	return nil, nil
 }
 
 type FakeHistorian struct {

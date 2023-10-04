@@ -24,7 +24,7 @@ func TestPatchLibraryElement(t *testing.T) {
 
 	scenarioWithPanel(t, "When an admin tries to patch a library panel that exists, it should succeed",
 		func(t *testing.T, sc scenarioContext) {
-			newFolder := createFolderWithACL(t, sc.sqlStore, "NewFolder", sc.user, []folderACLItem{})
+			newFolder := createFolder(t, sc, "NewFolder")
 			cmd := model.PatchLibraryElementCommand{
 				FolderID: newFolder.ID,
 				Name:     "Panel - New name",
@@ -55,7 +55,7 @@ func TestPatchLibraryElement(t *testing.T) {
 					Kind:        int64(model.PanelElement),
 					Type:        "graph",
 					Description: "An updated description",
-					Model: map[string]interface{}{
+					Model: map[string]any{
 						"datasource":  "${DS_GDEV-TESTDATA}",
 						"description": "An updated description",
 						"id":          float64(1),
@@ -89,7 +89,7 @@ func TestPatchLibraryElement(t *testing.T) {
 
 	scenarioWithPanel(t, "When an admin tries to patch a library panel with folder only, it should change folder successfully and return correct result",
 		func(t *testing.T, sc scenarioContext) {
-			newFolder := createFolderWithACL(t, sc.sqlStore, "NewFolder", sc.user, []folderACLItem{})
+			newFolder := createFolder(t, sc, "NewFolder")
 			cmd := model.PatchLibraryElementCommand{
 				FolderID: newFolder.ID,
 				Kind:     int64(model.PanelElement),
@@ -219,7 +219,7 @@ func TestPatchLibraryElement(t *testing.T) {
 			var result = validateAndUnMarshalResponse(t, resp)
 			sc.initialResult.Result.Type = "graph"
 			sc.initialResult.Result.Description = "New description"
-			sc.initialResult.Result.Model = map[string]interface{}{
+			sc.initialResult.Result.Model = map[string]any{
 				"title":       "New Model Title",
 				"name":        "New Model Name",
 				"type":        "graph",
@@ -248,7 +248,7 @@ func TestPatchLibraryElement(t *testing.T) {
 			var result = validateAndUnMarshalResponse(t, resp)
 			sc.initialResult.Result.Type = "text"
 			sc.initialResult.Result.Description = "New description"
-			sc.initialResult.Result.Model = map[string]interface{}{
+			sc.initialResult.Result.Model = map[string]any{
 				"type":        "text",
 				"description": "New description",
 			}
@@ -275,7 +275,7 @@ func TestPatchLibraryElement(t *testing.T) {
 			var result = validateAndUnMarshalResponse(t, resp)
 			sc.initialResult.Result.Type = "graph"
 			sc.initialResult.Result.Description = "A description"
-			sc.initialResult.Result.Model = map[string]interface{}{
+			sc.initialResult.Result.Model = map[string]any{
 				"type":        "graph",
 				"description": "A description",
 			}
@@ -325,7 +325,7 @@ func TestPatchLibraryElement(t *testing.T) {
 
 	scenarioWithPanel(t, "When an admin tries to patch a library panel with a folder where a library panel with the same name already exists, it should fail",
 		func(t *testing.T, sc scenarioContext) {
-			newFolder := createFolderWithACL(t, sc.sqlStore, "NewFolder", sc.user, []folderACLItem{})
+			newFolder := createFolder(t, sc, "NewFolder")
 			command := getCreatePanelCommand(newFolder.ID, "Text - Library Panel")
 			sc.ctx.Req.Body = mockRequestBody(command)
 			resp := sc.service.createHandler(sc.reqContext)
@@ -386,7 +386,7 @@ func TestPatchLibraryElement(t *testing.T) {
 			sc.initialResult.Result.Type = "text"
 			sc.initialResult.Result.Kind = int64(model.PanelElement)
 			sc.initialResult.Result.Description = "A description"
-			sc.initialResult.Result.Model = map[string]interface{}{
+			sc.initialResult.Result.Model = map[string]any{
 				"datasource":  "${DS_GDEV-TESTDATA}",
 				"id":          float64(1),
 				"title":       "Text - Library Panel",

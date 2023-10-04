@@ -1,4 +1,4 @@
-import { JsonTree } from 'react-awesome-query-builder';
+import { JsonTree } from '@react-awesome-query-builder/ui';
 
 import {
   DataFrame,
@@ -30,6 +30,7 @@ export interface SqlQueryForInterpolation {
 export interface SQLConnectionLimits {
   maxOpenConns: number;
   maxIdleConns: number;
+  maxIdleConnsAuto: boolean;
   connMaxLifetime: number;
 }
 

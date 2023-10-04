@@ -25,11 +25,13 @@ type ReqContext struct {
 	IsSignedIn     bool
 	IsRenderCall   bool
 	AllowAnonymous bool
-	SkipCache      bool
+	SkipDSCache    bool
+	SkipQueryCache bool
 	Logger         log.Logger
+	Error          error
 	// RequestNonce is a cryptographic request identifier for use with Content Security Policy.
-	RequestNonce          string
-	IsPublicDashboardView bool
+	RequestNonce               string
+	PublicDashboardAccessToken string
 
 	PerfmonTimer   prometheus.Summary
 	LookupTokenErr error
@@ -56,6 +58,10 @@ func (ctx *ReqContext) Handle(cfg *setting.Cfg, status int, title string, err er
 
 func (ctx *ReqContext) IsApiRequest() bool {
 	return strings.HasPrefix(ctx.Req.URL.Path, "/api")
+}
+
+func (ctx *ReqContext) IsPublicDashboardView() bool {
+	return ctx.PublicDashboardAccessToken != ""
 }
 
 func (ctx *ReqContext) JsonApiErr(status int, message string, err error) {
@@ -138,7 +144,11 @@ func (ctx *ReqContext) writeErrOrFallback(status int, message string, err error)
 			}
 		}
 
-		logger(logMessage, "error", err, "remote_addr", ctx.RemoteAddr(), "traceID", traceID)
+		if errutil.HasUnifiedLogging(ctx.Req.Context()) {
+			ctx.Error = err
+		} else {
+			logger(logMessage, "error", err, "remote_addr", ctx.RemoteAddr(), "traceID", traceID)
+		}
 	}
 
 	if _, ok := data["message"]; !ok && message != "" {
@@ -149,7 +159,7 @@ func (ctx *ReqContext) writeErrOrFallback(status int, message string, err error)
 }
 
 func (ctx *ReqContext) HasUserRole(role org.RoleType) bool {
-	return ctx.OrgRole.Includes(role)
+	return ctx.SignedInUser.GetOrgRole().Includes(role)
 }
 
 func (ctx *ReqContext) HasHelpFlag(flag user.HelpFlags1) bool {

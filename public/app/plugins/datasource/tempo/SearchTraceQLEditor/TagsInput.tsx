@@ -10,6 +10,7 @@ import { TraceqlFilter, TraceqlSearchScope } from '../dataquery.gen';
 import { TempoDatasource } from '../datasource';
 
 import SearchField from './SearchField';
+import { getFilteredTags } from './utils';
 
 const getStyles = () => ({
   vertical: css`
@@ -30,39 +31,57 @@ interface Props {
   filters: TraceqlFilter[];
   datasource: TempoDatasource;
   setError: (error: FetchError) => void;
-  tags: string[];
+  staticTags: Array<string | undefined>;
   isTagsLoading: boolean;
+  hideValues?: boolean;
+  query: string;
 }
-const TagsInput = ({ updateFilter, deleteFilter, filters, datasource, setError, tags, isTagsLoading }: Props) => {
+const TagsInput = ({
+  updateFilter,
+  deleteFilter,
+  filters,
+  datasource,
+  setError,
+  staticTags,
+  isTagsLoading,
+  hideValues,
+  query,
+}: Props) => {
   const styles = useStyles2(getStyles);
   const generateId = () => uuidv4().slice(0, 8);
   const handleOnAdd = useCallback(
-    () => updateFilter({ id: generateId(), type: 'dynamic', operator: '=', scope: TraceqlSearchScope.Span }),
+    () => updateFilter({ id: generateId(), operator: '=', scope: TraceqlSearchScope.Span }),
     [updateFilter]
   );
 
   useEffect(() => {
-    if (!filters?.find((f) => f.type === 'dynamic')) {
+    if (!filters?.length) {
       handleOnAdd();
     }
   }, [filters, handleOnAdd]);
 
-  const dynamicFilters = filters?.filter((f) => f.type === 'dynamic');
+  const getTags = (f: TraceqlFilter) => {
+    const tags = datasource.languageProvider.getTags(f.scope);
+    return getFilteredTags(tags, staticTags);
+  };
 
   return (
     <div className={styles.vertical}>
-      {dynamicFilters?.map((f, i) => (
+      {filters?.map((f, i) => (
         <div className={styles.horizontal} key={f.id}>
           <SearchField
             filter={f}
             datasource={datasource}
             setError={setError}
             updateFilter={updateFilter}
-            tags={tags}
+            tags={getTags(f)}
             isTagsLoading={isTagsLoading}
             deleteFilter={deleteFilter}
+            allowDelete={true}
+            hideValue={hideValues}
+            query={query}
           />
-          {i === dynamicFilters.length - 1 && (
+          {i === filters.length - 1 && (
             <AccessoryButton variant={'secondary'} icon={'plus'} onClick={handleOnAdd} title={'Add tag'} />
           )}
         </div>

@@ -2,18 +2,17 @@ import React, { useEffect, useState } from 'react';
 import { connect, ConnectedProps } from 'react-redux';
 
 import { renderMarkdown } from '@grafana/data';
-import { HorizontalGroup, Pagination, VerticalGroup } from '@grafana/ui';
 import { Page } from 'app/core/components/Page/Page';
 import { contextSrv } from 'app/core/core';
 import { OrgUser, OrgRole, StoreState } from 'app/types';
 
+import { OrgUsersTable } from '../admin/Users/OrgUsersTable';
 import InviteesTable from '../invites/InviteesTable';
 import { fetchInvitees } from '../invites/state/actions';
 import { selectInvitesMatchingQuery } from '../invites/state/selectors';
 
 import { UsersActionBar } from './UsersActionBar';
-import { UsersTable } from './UsersTable';
-import { loadUsers, removeUser, updateUser, changePage } from './state/actions';
+import { loadUsers, removeUser, updateUser, changePage, changeSort } from './state/actions';
 import { getUsers, getUsersSearchQuery } from './state/selectors';
 
 function mapStateToProps(state: StoreState) {
@@ -34,6 +33,7 @@ const mapDispatchToProps = {
   loadUsers,
   fetchInvitees,
   changePage,
+  changeSort,
   updateUser,
   removeUser,
 };
@@ -58,7 +58,8 @@ export const UsersListPageUnconnected = ({
   changePage,
   updateUser,
   removeUser,
-}: Props): JSX.Element => {
+  changeSort,
+}: Props) => {
   const [showInvites, setShowInvites] = useState(false);
   const externalUserMngInfoHtml = externalUserMngInfo ? renderMarkdown(externalUserMngInfo) : '';
 
@@ -71,6 +72,8 @@ export const UsersListPageUnconnected = ({
     updateUser({ ...user, role: role });
   };
 
+  const onRemoveUser = (user: OrgUser) => removeUser(user.userId);
+
   const onShowInvites = () => {
     setShowInvites(!showInvites);
   };
@@ -80,22 +83,16 @@ export const UsersListPageUnconnected = ({
       return <InviteesTable invitees={invitees} />;
     } else {
       return (
-        <VerticalGroup spacing="md">
-          <UsersTable
-            users={users}
-            orgId={contextSrv.user.orgId}
-            onRoleChange={(role, user) => onRoleChange(role, user)}
-            onRemoveUser={(user) => removeUser(user.userId)}
-          />
-          <HorizontalGroup justify="flex-end">
-            <Pagination
-              onNavigate={changePage}
-              currentPage={page}
-              numberOfPages={totalPages}
-              hideWhenSinglePage={true}
-            />
-          </HorizontalGroup>
-        </VerticalGroup>
+        <OrgUsersTable
+          users={users}
+          orgId={contextSrv.user.orgId}
+          onRoleChange={onRoleChange}
+          onRemoveUser={onRemoveUser}
+          fetchData={changeSort}
+          changePage={changePage}
+          page={page}
+          totalPages={totalPages}
+        />
       );
     }
   };

@@ -1,5 +1,5 @@
 import { css } from '@emotion/css';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Draggable } from 'react-beautiful-dnd';
 import { useUpdateEffect } from 'react-use';
 
@@ -20,6 +20,7 @@ export interface QueryOperationRowProps {
   children: React.ReactNode;
   isOpen?: boolean;
   draggable?: boolean;
+  collapsable?: boolean;
   disabled?: boolean;
 }
 
@@ -41,6 +42,7 @@ export function QueryOperationRow({
   isOpen,
   disabled,
   draggable,
+  collapsable,
   index,
   id,
 }: QueryOperationRowProps) {
@@ -49,6 +51,14 @@ export function QueryOperationRow({
   const onRowToggle = useCallback(() => {
     setIsContentVisible(!isContentVisible);
   }, [isContentVisible, setIsContentVisible]);
+
+  // Force QueryOperationRow expansion when `isOpen` prop updates in parent component.
+  // `undefined` can be deliberately passed value here, but we only want booleans to trigger the effect.
+  useEffect(() => {
+    if (typeof isOpen === 'boolean') {
+      setIsContentVisible(isOpen);
+    }
+  }, [isOpen]);
 
   const reportDragMousePosition = useCallback((e: React.MouseEvent) => {
     // When drag detected react-beautiful-dnd will preventDefault the event
@@ -106,6 +116,7 @@ export function QueryOperationRow({
                     actionsElement={actionsElement}
                     disabled={disabled}
                     draggable
+                    collapsable={collapsable}
                     dragHandleProps={provided.dragHandleProps}
                     headerElement={headerElementRendered}
                     isContentVisible={isContentVisible}
@@ -130,6 +141,7 @@ export function QueryOperationRow({
         actionsElement={actionsElement}
         disabled={disabled}
         draggable={false}
+        collapsable={collapsable}
         headerElement={headerElementRendered}
         isContentVisible={isContentVisible}
         onRowToggle={onRowToggle}

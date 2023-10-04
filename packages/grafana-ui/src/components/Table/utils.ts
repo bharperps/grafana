@@ -1,6 +1,6 @@
 import { Property } from 'csstype';
 import { clone } from 'lodash';
-import memoizeOne from 'memoize-one';
+import memoize from 'micro-memoize';
 import { Row } from 'react-table';
 
 import {
@@ -14,7 +14,6 @@ import {
   getDisplayProcessor,
   reduceField,
   GrafanaTheme2,
-  ArrayVector,
   isDataFrame,
   isTimeSeriesFrame,
 } from '@grafana/data';
@@ -22,7 +21,7 @@ import {
   BarGaugeDisplayMode,
   TableAutoCellOptions,
   TableCellBackgroundDisplayMode,
-  TableCellOptions,
+  TableCellDisplayMode,
 } from '@grafana/schema';
 
 import { BarGaugeCell } from './BarGaugeCell';
@@ -35,7 +34,7 @@ import { RowExpander } from './RowExpander';
 import { SparklineCell } from './SparklineCell';
 import {
   CellComponent,
-  TableCellDisplayMode,
+  TableCellOptions,
   TableFieldOptions,
   FooterItem,
   GrafanaTableColumn,
@@ -43,7 +42,6 @@ import {
 } from './types';
 
 export const EXPANDER_WIDTH = 50;
-export const OPTIONAL_ROW_NUMBER_COLUMN_WIDTH = 50;
 
 export function getTextAlign(field?: Field): Property.JustifyContent {
   if (!field) {
@@ -51,7 +49,7 @@ export function getTextAlign(field?: Field): Property.JustifyContent {
   }
 
   if (field.config.custom) {
-    const custom = field.config.custom as TableFieldOptions;
+    const custom: TableFieldOptions = field.config.custom;
 
     switch (custom.align) {
       case 'right':
@@ -86,6 +84,8 @@ export function getColumns(
       // Make an expander cell
       Header: () => null, // No header
       id: 'expander', // It needs an ID
+      // @ts-expect-error
+      // TODO fix type error here
       Cell: RowExpander,
       width: EXPANDER_WIDTH,
       minWidth: EXPANDER_WIDTH,
@@ -101,8 +101,8 @@ export function getColumns(
   }
 
   for (const [fieldIndex, field] of data.fields.entries()) {
-    const fieldTableOptions = (field.config.custom || {}) as TableFieldOptions;
-    if (fieldTableOptions.hidden) {
+    const fieldTableOptions: TableFieldOptions = field.config.custom || {};
+    if (fieldTableOptions.hidden || field.type === FieldType.nestedFrames) {
       continue;
     }
 
@@ -125,17 +125,19 @@ export function getColumns(
 
     const Cell = getCellComponent(fieldTableOptions.cellOptions?.type, field);
     columns.push({
+      // @ts-expect-error
+      // TODO fix type error here
       Cell,
       id: fieldIndex.toString(),
       field: field,
-      Header: getFieldDisplayName(field, data),
-      accessor: (_row: any, i: number) => {
-        return field.values.get(i);
+      Header: fieldTableOptions.hideHeader ? '' : getFieldDisplayName(field, data),
+      accessor: (_row, i) => {
+        return field.values[i];
       },
       sortType: selectSortType(field.type),
       width: fieldTableOptions.width,
       minWidth: fieldTableOptions.minWidth ?? columnMinWidth,
-      filter: memoizeOne(filterByValue(field)),
+      filter: memoize(filterByValue(field)),
       justifyContent: getTextAlign(field),
       Footer: getFooterValue(fieldIndex, footerValues, isCountRowsSet),
     });
@@ -165,27 +167,9 @@ export function getColumns(
   return columns;
 }
 
-/*
-  Build `Field` data for row numbers and prepend to the field array;
-  this way, on other column's sort, the row numbers will persist in their proper place.
-*/
-export function buildFieldsForOptionalRowNums(totalRows: number): Field {
-  return {
-    ...defaultRowNumberColumnFieldData,
-    values: buildBufferedEmptyValues(totalRows),
-  };
-}
-
-/*
-  This gives us an empty buffered ArrayVector of the desired length to match the table data.
-  It is simply a data placeholder for the Row Number column data.
-*/
-export function buildBufferedEmptyValues(totalRows: number): ArrayVector<string> {
-  return new ArrayVector(new Array(totalRows));
-}
-
 export function getCellComponent(displayMode: TableCellDisplayMode, field: Field): CellComponent {
   switch (displayMode) {
+    case TableCellDisplayMode.Custom:
     case TableCellDisplayMode.ColorText:
     case TableCellDisplayMode.ColorBackground:
       return DefaultCell;
@@ -204,7 +188,7 @@ export function getCellComponent(displayMode: TableCellDisplayMode, field: Field
   }
 
   if (field.type === FieldType.frame) {
-    const firstValue = field.values.get(0);
+    const firstValue = field.values[0];
     if (isDataFrame(firstValue) && isTimeSeriesFrame(firstValue)) {
       return SparklineCell;
     }
@@ -264,16 +248,16 @@ export function rowToFieldValue(row: any, field?: Field): string {
     return '';
   }
 
-  const fieldValue = field.values.get(row.index);
+  const fieldValue = field.values[row.index];
   const displayValue = field.display ? field.display(fieldValue) : fieldValue;
   const value = field.display ? formattedValueToString(displayValue) : displayValue;
 
   return value;
 }
 
-export function valuesToOptions(unique: Record<string, any>): SelectableValue[] {
+export function valuesToOptions(unique: Record<string, unknown>): SelectableValue[] {
   return Object.keys(unique)
-    .reduce((all, key) => all.concat({ value: unique[key], label: key }), [] as SelectableValue[])
+    .reduce<SelectableValue[]>((all, key) => all.concat({ value: unique[key], label: key }), [])
     .sort(sortOptions);
 }
 
@@ -309,12 +293,12 @@ export function getFilteredOptions(options: SelectableValue[], filterValues?: Se
   return options.filter((option) => filterValues.some((filtered) => filtered.value === option.value));
 }
 
-export function sortCaseInsensitive(a: Row<any>, b: Row<any>, id: string) {
+export function sortCaseInsensitive(a: Row, b: Row, id: string) {
   return String(a.values[id]).localeCompare(String(b.values[id]), undefined, { sensitivity: 'base' });
 }
 
 // sortNumber needs to have great performance as it is called a lot
-export function sortNumber(rowA: Row<any>, rowB: Row<any>, id: string) {
+export function sortNumber(rowA: Row, rowB: Row, id: string) {
   const a = toNumber(rowA.values[id]);
   const b = toNumber(rowB.values[id]);
   return a === b ? 0 : a > b ? 1 : -1;
@@ -338,24 +322,6 @@ export function getFooterItems(
   options: TableFooterCalc,
   theme2: GrafanaTheme2
 ): FooterItem[] {
-  /*
-    Here, `filterFields` is passed as the `headerGroups[0].headers` array
-    that was destructured from the `useTable` hook. Unfortunately, since
-    the `headerGroups` object is data based ONLY on the rendered "non-hidden"
-    column headers, it will NOT include the Row Number column if it has been
-    toggled off. This will shift the rendering of the footer left 1 column,
-    creating an off-by-one issue. This is why we test for a `field.id` of "0".
-    If the condition is truthy, the togglable Row Number column is being rendered,
-    and we can proceed normally. If not, we must add the field data in its place
-    so that the footer data renders in the expected column.
-  */
-  if (!filterFields.some((field) => field?.id === '0')) {
-    const length = values.length;
-    // Build the additional field that will correct the off-by-one footer issue.
-    const fieldToAdd = { id: '0', field: buildFieldsForOptionalRowNums(length) };
-    filterFields = [fieldToAdd, ...filterFields];
-  }
-
   /*
     The FooterItems[] are calculated using both the `headerGroups[0].headers`
     (filterFields) and `rows` (values) destructured from the useTable() hook.
@@ -383,8 +349,8 @@ export function getFooterItems(
   return filterFields.map((data, i) => {
     // Then test for numerical data - this will filter out placeholder `filterFields` as well.
     if (data?.field?.type !== FieldType.number) {
-      // Show the reducer type ("Total", "Range", "Count", "Delta", etc) in the first non "Row Number" column, only if it cannot be numerically reduced.
-      if (i === 1 && options.reducer && options.reducer.length > 0) {
+      // Show the reducer in the first column
+      if (i === 0 && options.reducer && options.reducer.length > 0) {
         const reducer = fieldReducers.get(options.reducer[0]);
         return reducer.name;
       }
@@ -393,7 +359,7 @@ export function getFooterItems(
     }
 
     let newField = clone(data.field);
-    newField.values = new ArrayVector(values[data.id]);
+    newField.values = values[data.id];
     newField.state = undefined;
 
     data.field = newField;
@@ -443,7 +409,7 @@ export function getCellOptions(field: Field): TableCellOptions {
     return defaultCellOptions;
   }
 
-  return (field.config.custom as TableFieldOptions).cellOptions;
+  return field.config.custom.cellOptions;
 }
 
 /**
@@ -494,34 +460,6 @@ export function migrateTableDisplayModeToCellOptions(displayMode: TableCellDispl
   }
 }
 
-/*
-  For building the column data for the togglable Row Number field.
-  `values` property is omitted, as it will be added at a later time.
-*/
-export const defaultRowNumberColumnFieldData: Omit<Field, 'values'> = {
-  /*
-    Single whitespace as value for `name` property so as to render an empty/invisible column header;
-    without the single whitespace, falsey headers (empty strings) are given a default name of "Value".
-  */
-  name: ' ',
-  display: function (value) {
-    return {
-      numeric: Number(value),
-      text: value != null ? String(value) : '',
-    };
-  },
-  type: FieldType.string,
-  config: {
-    color: { mode: 'thresholds' },
-    custom: {
-      align: 'auto',
-      cellOptions: { type: 'auto' },
-      inspect: false,
-      width: OPTIONAL_ROW_NUMBER_COLUMN_WIDTH,
-    },
-  },
-};
-
 /**
  * This recurses through an array of `filterFields` (Array<{ id: string; field?: Field } | undefined>)
  * and adds back the missing indecies that are removed due to hiding a column through an panel override.
@@ -538,7 +476,7 @@ function addMissingColumnIndex(columns: Array<{ id: string; field?: Field } | un
   const missingIndex = columns.findIndex((field, index) => field?.id !== String(index));
 
   // Base case
-  if (missingIndex === -1) {
+  if (missingIndex === -1 || columns[missingIndex]?.id === 'expander') {
     return;
   }
 

@@ -15,6 +15,7 @@ import {
   LoadingState,
   toDataFrame,
 } from '@grafana/data';
+import { config } from '@grafana/runtime';
 import { TimeSrv } from 'app/features/dashboard/services/TimeSrv';
 import { TemplateSrv } from 'app/features/templating/template_srv';
 import { QueryOptions } from 'app/types';
@@ -29,7 +30,7 @@ import {
   prometheusSpecialRegexEscape,
 } from './datasource';
 import PromQlLanguageProvider from './language_provider';
-import { PromOptions, PromQuery, PromQueryRequest } from './types';
+import { PrometheusCacheLevel, PromOptions, PromQuery, PromQueryRequest } from './types';
 
 const fetchMock = jest.fn().mockReturnValue(of(createDefaultPromResponse()));
 
@@ -41,22 +42,32 @@ jest.mock('@grafana/runtime', () => ({
   }),
 }));
 
-const getAdhocFiltersMock = jest.fn().mockImplementation(() => []);
 const replaceMock = jest.fn().mockImplementation((a: string, ...rest: unknown[]) => a);
 
 const templateSrvStub = {
-  getAdhocFilters: getAdhocFiltersMock,
   replace: replaceMock,
 } as unknown as TemplateSrv;
 
-const timeSrvStub = {
+const fromSeconds = 1674500289215;
+const toSeconds = 1674500349215;
+
+const timeSrvStubOld = {
   timeRange() {
     return {
       from: dateTime(1531468681),
       to: dateTime(1531489712),
     };
   },
-} as unknown as TimeSrv;
+} as TimeSrv;
+
+const timeSrvStub: TimeSrv = {
+  timeRange() {
+    return {
+      from: dateTime(fromSeconds),
+      to: dateTime(toSeconds),
+    };
+  },
+} as TimeSrv;
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -73,11 +84,22 @@ describe('PrometheusDatasource', () => {
     password: 'mupp',
     jsonData: {
       customQueryParameters: '',
-    },
+      cacheLevel: PrometheusCacheLevel.Low,
+    } as Partial<PromOptions>,
   } as unknown as DataSourceInstanceSettings<PromOptions>;
 
   beforeEach(() => {
     ds = new PrometheusDatasource(instanceSettings, templateSrvStub, timeSrvStub);
+  });
+
+  // Some functions are required by the parent datasource class to provide functionality such as ad-hoc filters, which requires the definition of the getTagKeys, and getTagValues functions
+  describe('Datasource contract', () => {
+    it('has function called getTagKeys', () => {
+      expect(Object.getOwnPropertyNames(Object.getPrototypeOf(ds))).toContain('getTagKeys');
+    });
+    it('has function called getTagValues', () => {
+      expect(Object.getOwnPropertyNames(Object.getPrototypeOf(ds))).toContain('getTagValues');
+    });
   });
 
   describe('Query', () => {
@@ -132,11 +154,6 @@ describe('PrometheusDatasource', () => {
       // tested. Checked manually that this ends up with throwing
       // await expect(directDs.metricFindQuery('label_names(foo)')).rejects.toBeDefined();
 
-      jest.spyOn(console, 'error').mockImplementation(() => {});
-      await expect(directDs.testDatasource()).resolves.toMatchObject({
-        message: expect.stringMatching('Browser access'),
-        status: 'error',
-      });
       await expect(
         directDs.annotationQuery({
           range: { ...range, raw: range },
@@ -153,10 +170,14 @@ describe('PrometheusDatasource', () => {
       ).rejects.toMatchObject({
         message: expect.stringMatching('Browser access'),
       });
-      await expect(directDs.getLabelNames()).rejects.toMatchObject({
-        message: expect.stringMatching('Browser access'),
-      });
-      await expect(directDs.getTagValues()).rejects.toMatchObject({
+
+      const errorMock = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+      await directDs.getTagKeys({ filters: [] });
+      // Language provider currently catches and just logs the error
+      expect(errorMock).toHaveBeenCalledTimes(1);
+
+      await expect(directDs.getTagValues({ filters: [], key: 'A' })).rejects.toMatchObject({
         message: expect.stringMatching('Browser access'),
       });
     });
@@ -287,17 +308,13 @@ describe('PrometheusDatasource', () => {
     const DEFAULT_QUERY_EXPRESSION = 'metric{job="foo"} - metric';
     const target: PromQuery = { expr: DEFAULT_QUERY_EXPRESSION, refId: 'A' };
 
-    afterAll(() => {
-      getAdhocFiltersMock.mockImplementation(() => []);
-    });
-
     it('should not modify expression with no filters', () => {
       const result = ds.createQuery(target, { interval: '15s' } as DataQueryRequest<PromQuery>, 0, 0);
       expect(result).toMatchObject({ expr: DEFAULT_QUERY_EXPRESSION });
     });
 
     it('should add filters to expression', () => {
-      getAdhocFiltersMock.mockReturnValue([
+      const filters = [
         {
           key: 'k1',
           operator: '=',
@@ -308,13 +325,13 @@ describe('PrometheusDatasource', () => {
           operator: '!=',
           value: 'v2',
         },
-      ]);
-      const result = ds.createQuery(target, { interval: '15s' } as DataQueryRequest<PromQuery>, 0, 0);
+      ];
+      const result = ds.createQuery(target, { interval: '15s', filters } as DataQueryRequest<PromQuery>, 0, 0);
       expect(result).toMatchObject({ expr: 'metric{job="foo", k1="v1", k2!="v2"} - metric{k1="v1", k2!="v2"}' });
     });
 
     it('should add escaping if needed to regex filter expressions', () => {
-      getAdhocFiltersMock.mockReturnValue([
+      const filters = [
         {
           key: 'k1',
           operator: '=~',
@@ -325,8 +342,9 @@ describe('PrometheusDatasource', () => {
           operator: '=~',
           value: `v'.*`,
         },
-      ]);
-      const result = ds.createQuery(target, { interval: '15s' } as DataQueryRequest<PromQuery>, 0, 0);
+      ];
+
+      const result = ds.createQuery(target, { interval: '15s', filters } as DataQueryRequest<PromQuery>, 0, 0);
       expect(result).toMatchObject({
         expr: `metric{job="foo", k1=~"v.*", k2=~"v\\\\'.*"} - metric{k1=~"v.*", k2=~"v\\\\'.*"}`,
       });
@@ -335,6 +353,7 @@ describe('PrometheusDatasource', () => {
 
   describe('When converting prometheus histogram to heatmap format', () => {
     let query: DataQueryRequest<PromQuery>;
+
     beforeEach(() => {
       query = {
         range: { from: dateTime(1443454528000), to: dateTime(1443454528000) },
@@ -372,9 +391,9 @@ describe('PrometheusDatasource', () => {
       ds.performTimeSeriesQuery = jest.fn().mockReturnValue(of(responseMock));
       await expect(ds.query(query)).toEmitValuesWith((result) => {
         const results = result[0].data;
-        expect(results[0].fields[1].values.toArray()).toEqual([10, 10]);
-        expect(results[0].fields[2].values.toArray()).toEqual([10, 0]);
-        expect(results[0].fields[3].values.toArray()).toEqual([5, 0]);
+        expect(results[0].fields[1].values).toEqual([10, 10]);
+        expect(results[0].fields[2].values).toEqual([10, 0]);
+        expect(results[0].fields[3].values).toEqual([5, 0]);
       });
     });
 
@@ -418,6 +437,106 @@ describe('PrometheusDatasource', () => {
         const seriesLabels = result[0].data[0].fields.slice(1).map((field: Field) => getFieldDisplayName(field));
         expect(seriesLabels).toEqual(expected);
       });
+    });
+  });
+
+  // Remove when prometheusResourceBrowserCache is removed
+  describe('When prometheusResourceBrowserCache feature flag is off, there should be no change to the query intervals ', () => {
+    beforeEach(() => {
+      config.featureToggles.prometheusResourceBrowserCache = false;
+    });
+
+    it('test default 1 minute quantization', () => {
+      const dataSource = new PrometheusDatasource(
+        {
+          ...instanceSettings,
+          jsonData: { ...instanceSettings.jsonData, cacheLevel: PrometheusCacheLevel.Low },
+        },
+        templateSrvStub as unknown as TemplateSrv,
+        timeSrvStub as unknown as TimeSrv
+      );
+      const quantizedRange = dataSource.getAdjustedInterval();
+      const oldRange = dataSource.getTimeRangeParams();
+      // For "1 minute" the window is unchanged
+      expect(parseInt(quantizedRange.end, 10) - parseInt(quantizedRange.start, 10)).toBe(60);
+      expect(parseInt(oldRange.end, 10) - parseInt(oldRange.start, 10)).toBe(60);
+    });
+
+    it('test 10 minute quantization', () => {
+      const dataSource = new PrometheusDatasource(
+        {
+          ...instanceSettings,
+          jsonData: { ...instanceSettings.jsonData, cacheLevel: PrometheusCacheLevel.Medium },
+        },
+        templateSrvStub as unknown as TemplateSrv,
+        timeSrvStub as unknown as TimeSrv
+      );
+      const quantizedRange = dataSource.getAdjustedInterval();
+      const oldRange = dataSource.getTimeRangeParams();
+
+      expect(parseInt(quantizedRange.end, 10) - parseInt(quantizedRange.start, 10)).toBe(60);
+      expect(parseInt(oldRange.end, 10) - parseInt(oldRange.start, 10)).toBe(60);
+    });
+  });
+
+  describe('Test query range snapping', () => {
+    beforeEach(() => {
+      config.featureToggles.prometheusResourceBrowserCache = true;
+    });
+
+    it('test default 1 minute quantization', () => {
+      const dataSource = new PrometheusDatasource(
+        {
+          ...instanceSettings,
+          jsonData: { ...instanceSettings.jsonData, cacheLevel: PrometheusCacheLevel.Low },
+        },
+        templateSrvStub as unknown as TemplateSrv,
+        timeSrvStub as unknown as TimeSrv
+      );
+      const quantizedRange = dataSource.getAdjustedInterval();
+      // For "1 minute" the window contains all the minutes, so a query from 1:11:09 - 1:12:09 becomes 1:11 - 1:13
+      expect(parseInt(quantizedRange.end, 10) - parseInt(quantizedRange.start, 10)).toBe(120);
+    });
+
+    it('test 10 minute quantization', () => {
+      const dataSource = new PrometheusDatasource(
+        {
+          ...instanceSettings,
+          jsonData: { ...instanceSettings.jsonData, cacheLevel: PrometheusCacheLevel.Medium },
+        },
+        templateSrvStub as unknown as TemplateSrv,
+        timeSrvStub as unknown as TimeSrv
+      );
+      const quantizedRange = dataSource.getAdjustedInterval();
+      expect(parseInt(quantizedRange.end, 10) - parseInt(quantizedRange.start, 10)).toBe(600);
+    });
+
+    it('test 60 minute quantization', () => {
+      const dataSource = new PrometheusDatasource(
+        {
+          ...instanceSettings,
+          jsonData: { ...instanceSettings.jsonData, cacheLevel: PrometheusCacheLevel.High },
+        },
+        templateSrvStub as unknown as TemplateSrv,
+        timeSrvStub as unknown as TimeSrv
+      );
+      const quantizedRange = dataSource.getAdjustedInterval();
+      expect(parseInt(quantizedRange.end, 10) - parseInt(quantizedRange.start, 10)).toBe(3600);
+    });
+
+    it('test quantization turned off', () => {
+      const dataSource = new PrometheusDatasource(
+        {
+          ...instanceSettings,
+          jsonData: { ...instanceSettings.jsonData, cacheLevel: PrometheusCacheLevel.None },
+        },
+        templateSrvStub as unknown as TemplateSrv,
+        timeSrvStub as unknown as TimeSrv
+      );
+      const quantizedRange = dataSource.getAdjustedInterval();
+      expect(parseInt(quantizedRange.end, 10) - parseInt(quantizedRange.start, 10)).toBe(
+        (toSeconds - fromSeconds) / 1000
+      );
     });
   });
 
@@ -647,7 +766,6 @@ describe('PrometheusDatasource', () => {
 
   describe('applyTemplateVariables', () => {
     afterAll(() => {
-      getAdhocFiltersMock.mockImplementation(() => []);
       replaceMock.mockImplementation((a: string, ...rest: unknown[]) => a);
     });
 
@@ -691,7 +809,7 @@ describe('PrometheusDatasource', () => {
 
     it('should add ad-hoc filters to expr', () => {
       replaceMock.mockImplementation((a: string) => a);
-      getAdhocFiltersMock.mockReturnValue([
+      const filters = [
         {
           key: 'k1',
           operator: '=',
@@ -702,22 +820,76 @@ describe('PrometheusDatasource', () => {
           operator: '!=',
           value: 'v2',
         },
-      ]);
+      ];
 
       const query = {
         expr: 'test{job="bar"}',
         refId: 'A',
       };
 
-      const result = ds.applyTemplateVariables(query, {});
+      const result = ds.applyTemplateVariables(query, {}, filters);
       expect(result).toMatchObject({ expr: 'test{job="bar", k1="v1", k2!="v2"}' });
+    });
+
+    it('should add ad-hoc filters only to expr', () => {
+      replaceMock.mockImplementation((a: string) => a?.replace('$A', '99') ?? a);
+      const filters = [
+        {
+          key: 'k1',
+          operator: '=',
+          value: 'v1',
+        },
+        {
+          key: 'k2',
+          operator: '!=',
+          value: 'v2',
+        },
+      ];
+
+      const query = {
+        expr: 'test{job="bar"} > $A',
+        refId: 'A',
+      };
+
+      const result = ds.applyTemplateVariables(query, {}, filters);
+      expect(result).toMatchObject({ expr: 'test{job="bar", k1="v1", k2!="v2"} > 99' });
+    });
+
+    it('should add ad-hoc filters only to expr and expression has template variable as label value??', () => {
+      const searchPattern = /\$A/g;
+      replaceMock.mockImplementation((a: string) => a?.replace(searchPattern, '99') ?? a);
+      const filters = [
+        {
+          key: 'k1',
+          operator: '=',
+          value: 'v1',
+        },
+        {
+          key: 'k2',
+          operator: '!=',
+          value: 'v2',
+        },
+      ];
+
+      const query = {
+        expr: 'test{job="$A"} > $A',
+        refId: 'A',
+      };
+
+      const result = ds.applyTemplateVariables(query, {}, filters);
+      expect(result).toMatchObject({ expr: 'test{job="99", k1="v1", k2!="v2"} > 99' });
     });
   });
 
   describe('metricFindQuery', () => {
     beforeEach(() => {
+      const prometheusDatasource = new PrometheusDatasource(
+        { ...instanceSettings, jsonData: { ...instanceSettings.jsonData, cacheLevel: PrometheusCacheLevel.None } },
+        templateSrvStub,
+        timeSrvStubOld
+      );
       const query = 'query_result(topk(5,rate(http_request_duration_microseconds_count[$__interval])))';
-      ds.metricFindQuery(query);
+      prometheusDatasource.metricFindQuery(query);
     });
 
     it('should call templateSrv.replace with scopedVars', () => {
@@ -756,7 +928,7 @@ describe('PrometheusDatasource2', () => {
     directUrl: 'direct',
     user: 'test',
     password: 'mupp',
-    jsonData: { httpMethod: 'GET' },
+    jsonData: { httpMethod: 'GET', cacheLevel: PrometheusCacheLevel.None },
   } as unknown as DataSourceInstanceSettings<PromOptions>;
 
   let ds: PrometheusDatasource;
@@ -889,27 +1061,27 @@ describe('PrometheusDatasource2', () => {
     });
 
     it('should fill null until first datapoint in response', () => {
-      expect(results.data[0].fields[0].values.get(0)).toBe(start * 1000);
-      expect(results.data[0].fields[1].values.get(0)).toBe(null);
-      expect(results.data[0].fields[0].values.get(1)).toBe((start + step * 1) * 1000);
-      expect(results.data[0].fields[1].values.get(1)).toBe(3846);
+      expect(results.data[0].fields[0].values[0]).toBe(start * 1000);
+      expect(results.data[0].fields[1].values[0]).toBe(null);
+      expect(results.data[0].fields[0].values[1]).toBe((start + step * 1) * 1000);
+      expect(results.data[0].fields[1].values[1]).toBe(3846);
     });
 
     it('should fill null after last datapoint in response', () => {
       const length = (end - start) / step + 1;
-      expect(results.data[0].fields[0].values.get(length - 2)).toBe((end - step * 1) * 1000);
-      expect(results.data[0].fields[1].values.get(length - 2)).toBe(3848);
-      expect(results.data[0].fields[0].values.get(length - 1)).toBe(end * 1000);
-      expect(results.data[0].fields[1].values.get(length - 1)).toBe(null);
+      expect(results.data[0].fields[0].values[length - 2]).toBe((end - step * 1) * 1000);
+      expect(results.data[0].fields[1].values[length - 2]).toBe(3848);
+      expect(results.data[0].fields[0].values[length - 1]).toBe(end * 1000);
+      expect(results.data[0].fields[1].values[length - 1]).toBe(null);
     });
 
     it('should fill null at gap between series', () => {
-      expect(results.data[0].fields[0].values.get(2)).toBe((start + step * 2) * 1000);
-      expect(results.data[0].fields[1].values.get(2)).toBe(null);
-      expect(results.data[1].fields[0].values.get(1)).toBe((start + step * 1) * 1000);
-      expect(results.data[1].fields[1].values.get(1)).toBe(null);
-      expect(results.data[1].fields[0].values.get(3)).toBe((start + step * 3) * 1000);
-      expect(results.data[1].fields[1].values.get(3)).toBe(null);
+      expect(results.data[0].fields[0].values[2]).toBe((start + step * 2) * 1000);
+      expect(results.data[0].fields[1].values[2]).toBe(null);
+      expect(results.data[1].fields[0].values[1]).toBe((start + step * 1) * 1000);
+      expect(results.data[1].fields[1].values[1]).toBe(null);
+      expect(results.data[1].fields[0].values[3]).toBe((start + step * 3) * 1000);
+      expect(results.data[1].fields[1].values[3]).toBe(null);
     });
   });
 
@@ -1398,7 +1570,13 @@ describe('PrometheusDatasource2', () => {
       const step = 55;
       const adjusted = alignRange(start, end, step, timeSrvStub.timeRange().to.utcOffset() * 60);
       const urlExpected =
-        'proxied/api/v1/query_range?query=test' + '&start=' + adjusted.start + '&end=' + adjusted.end + '&step=' + step;
+        'proxied/api/v1/query_range?query=test' +
+        '&start=' +
+        adjusted.start +
+        '&end=' +
+        (adjusted.end + step) +
+        '&step=' +
+        step;
       fetchMock.mockImplementation(() => of(response));
       ds.query(query);
       const res = fetchMock.mock.calls[0][0];
@@ -1651,7 +1829,7 @@ describe('PrometheusDatasource2', () => {
         '&start=' +
         adjusted.start +
         '&end=' +
-        adjusted.end +
+        (adjusted.end + step) +
         '&step=' +
         step;
       fetchMock.mockImplementation(() => of(response));
@@ -1873,7 +2051,7 @@ describe('PrometheusDatasource for POST', () => {
   });
 
   describe('When querying prometheus via check headers X-Dashboard-Id X-Panel-Id and X-Dashboard-UID', () => {
-    const options = { dashboardId: 1, panelId: 2, dashboardUID: 'WFlOM-jM1' } as DataQueryRequest<PromQuery>;
+    const options = { panelId: 2, dashboardUID: 'WFlOM-jM1' } as DataQueryRequest<PromQuery>;
     const httpOptions = {
       headers: {} as { [key: string]: number | undefined },
     } as PromQueryRequest;
@@ -1897,7 +2075,6 @@ describe('PrometheusDatasource for POST', () => {
 
     it('with proxy access tracing headers should be added', () => {
       ds._addTracingHeaders(httpOptions, options);
-      expect(httpOptions.headers['X-Dashboard-Id']).toBe(options.dashboardId);
       expect(httpOptions.headers['X-Panel-Id']).toBe(options.panelId);
       expect(httpOptions.headers['X-Dashboard-UID']).toBe(options.dashboardUID);
     });
@@ -1975,7 +2152,6 @@ describe('prepareTargets', () => {
       const target: PromQuery = {
         refId: 'A',
         expr: 'up',
-        requestId: '2A',
       };
 
       const { queries, activeTargets, panelId, end, start } = getPrepareTargetsContext({ targets: [target] });
@@ -1993,7 +2169,6 @@ describe('prepareTargets', () => {
         hinting: undefined,
         instant: undefined,
         refId: target.refId,
-        requestId: panelId + target.refId,
         start,
         step: 1,
       });
@@ -2134,7 +2309,6 @@ describe('prepareTargets', () => {
           expr: 'up',
           range: true,
           instant: true,
-          requestId: '2A',
         };
 
         const { queries, activeTargets, panelId, end, start } = getPrepareTargetsContext({
@@ -2155,7 +2329,6 @@ describe('prepareTargets', () => {
           hinting: undefined,
           instant: true,
           refId: target.refId,
-          requestId: panelId + target.refId + '_instant',
           start,
           step: 1,
         });
@@ -2163,7 +2336,6 @@ describe('prepareTargets', () => {
           ...target,
           format: 'table',
           instant: true,
-          requestId: panelId + target.refId + '_instant',
           valueWithRefId: true,
         });
         expect(queries[1]).toEqual({
@@ -2177,7 +2349,6 @@ describe('prepareTargets', () => {
           hinting: undefined,
           instant: false,
           refId: target.refId,
-          requestId: panelId + target.refId,
           start,
           step: 1,
         });
@@ -2185,7 +2356,6 @@ describe('prepareTargets', () => {
           ...target,
           format: 'time_series',
           instant: false,
-          requestId: panelId + target.refId,
         });
       });
     });
@@ -2197,7 +2367,6 @@ describe('prepareTargets', () => {
           expr: 'up',
           instant: true,
           range: false,
-          requestId: '2A',
         };
 
         const { queries, activeTargets, panelId, end, start } = getPrepareTargetsContext({
@@ -2218,7 +2387,6 @@ describe('prepareTargets', () => {
           hinting: undefined,
           instant: true,
           refId: target.refId,
-          requestId: panelId + target.refId,
           start,
           step: 1,
         });
@@ -2234,7 +2402,6 @@ describe('prepareTargets', () => {
         expr: 'up',
         range: true,
         instant: false,
-        requestId: '2A',
       };
 
       const { queries, activeTargets, panelId, end, start } = getPrepareTargetsContext({
@@ -2255,7 +2422,6 @@ describe('prepareTargets', () => {
         hinting: undefined,
         instant: false,
         refId: target.refId,
-        requestId: panelId + target.refId,
         start,
         step: 1,
       });

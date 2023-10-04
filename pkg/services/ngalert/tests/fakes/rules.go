@@ -21,21 +21,21 @@ type RuleStore struct {
 	mtx sync.Mutex
 	// OrgID -> RuleGroup -> Namespace -> Rules
 	Rules       map[int64][]*models.AlertRule
-	Hook        func(cmd interface{}) error // use Hook if you need to intercept some query and return an error
-	RecordedOps []interface{}
+	Hook        func(cmd any) error // use Hook if you need to intercept some query and return an error
+	RecordedOps []any
 	Folders     map[int64][]*folder.Folder
 }
 
 type GenericRecordedQuery struct {
 	Name   string
-	Params []interface{}
+	Params []any
 }
 
 func NewRuleStore(t *testing.T) *RuleStore {
 	return &RuleStore{
 		t:     t,
 		Rules: map[int64][]*models.AlertRule{},
-		Hook: func(interface{}) error {
+		Hook: func(any) error {
 			return nil
 		},
 		Folders: map[int64][]*folder.Folder{},
@@ -78,11 +78,11 @@ mainloop:
 }
 
 // GetRecordedCommands filters recorded commands using predicate function. Returns the subset of the recorded commands that meet the predicate
-func (f *RuleStore) GetRecordedCommands(predicate func(cmd interface{}) (interface{}, bool)) []interface{} {
+func (f *RuleStore) GetRecordedCommands(predicate func(cmd any) (any, bool)) []any {
 	f.mtx.Lock()
 	defer f.mtx.Unlock()
 
-	result := make([]interface{}, 0, len(f.RecordedOps))
+	result := make([]any, 0, len(f.RecordedOps))
 	for _, op := range f.RecordedOps {
 		cmd, ok := predicate(op)
 		if !ok {
@@ -96,7 +96,7 @@ func (f *RuleStore) GetRecordedCommands(predicate func(cmd interface{}) (interfa
 func (f *RuleStore) DeleteAlertRulesByUID(_ context.Context, orgID int64, UIDs ...string) error {
 	f.RecordedOps = append(f.RecordedOps, GenericRecordedQuery{
 		Name:   "DeleteAlertRulesByUID",
-		Params: []interface{}{orgID, UIDs},
+		Params: []any{orgID, UIDs},
 	})
 
 	rules := f.Rules[orgID]
@@ -120,37 +120,36 @@ func (f *RuleStore) DeleteAlertRulesByUID(_ context.Context, orgID int64, UIDs .
 	return nil
 }
 
-func (f *RuleStore) GetAlertRuleByUID(_ context.Context, q *models.GetAlertRuleByUIDQuery) error {
+func (f *RuleStore) GetAlertRuleByUID(_ context.Context, q *models.GetAlertRuleByUIDQuery) (*models.AlertRule, error) {
 	f.mtx.Lock()
 	defer f.mtx.Unlock()
 	f.RecordedOps = append(f.RecordedOps, *q)
 	if err := f.Hook(*q); err != nil {
-		return err
+		return nil, err
 	}
 	rules, ok := f.Rules[q.OrgID]
 	if !ok {
-		return nil
+		return nil, nil
 	}
 
 	for _, rule := range rules {
 		if rule.UID == q.UID {
-			q.Result = rule
-			break
+			return rule, nil
 		}
 	}
-	return nil
+	return nil, nil
 }
 
-func (f *RuleStore) GetAlertRulesGroupByRuleUID(_ context.Context, q *models.GetAlertRulesGroupByRuleUIDQuery) error {
+func (f *RuleStore) GetAlertRulesGroupByRuleUID(_ context.Context, q *models.GetAlertRulesGroupByRuleUIDQuery) ([]*models.AlertRule, error) {
 	f.mtx.Lock()
 	defer f.mtx.Unlock()
 	f.RecordedOps = append(f.RecordedOps, *q)
 	if err := f.Hook(*q); err != nil {
-		return err
+		return nil, err
 	}
 	rules, ok := f.Rules[q.OrgID]
 	if !ok {
-		return nil
+		return nil, nil
 	}
 
 	var selected *models.AlertRule
@@ -161,24 +160,25 @@ func (f *RuleStore) GetAlertRulesGroupByRuleUID(_ context.Context, q *models.Get
 		}
 	}
 	if selected == nil {
-		return nil
+		return nil, nil
 	}
 
+	ruleList := []*models.AlertRule{}
 	for _, rule := range rules {
 		if rule.GetGroupKey() == selected.GetGroupKey() {
-			q.Result = append(q.Result, rule)
+			ruleList = append(ruleList, rule)
 		}
 	}
-	return nil
+	return ruleList, nil
 }
 
-func (f *RuleStore) ListAlertRules(_ context.Context, q *models.ListAlertRulesQuery) error {
+func (f *RuleStore) ListAlertRules(_ context.Context, q *models.ListAlertRulesQuery) (models.RulesGroup, error) {
 	f.mtx.Lock()
 	defer f.mtx.Unlock()
 	f.RecordedOps = append(f.RecordedOps, *q)
 
 	if err := f.Hook(*q); err != nil {
-		return err
+		return nil, err
 	}
 
 	hasDashboard := func(r *models.AlertRule, dashboardUID string, panelID int64) bool {
@@ -211,6 +211,7 @@ func (f *RuleStore) ListAlertRules(_ context.Context, q *models.ListAlertRulesQu
 		return true
 	}
 
+	ruleList := models.RulesGroup{}
 	for _, r := range f.Rules[q.OrgID] {
 		if !hasDashboard(r, q.DashboardUID, q.PanelID) {
 			continue
@@ -221,10 +222,10 @@ func (f *RuleStore) ListAlertRules(_ context.Context, q *models.ListAlertRulesQu
 		if q.RuleGroup != "" && r.RuleGroup != q.RuleGroup {
 			continue
 		}
-		q.Result = append(q.Result, r)
+		ruleList = append(ruleList, r)
 	}
 
-	return nil
+	return ruleList, nil
 }
 
 func (f *RuleStore) GetUserVisibleNamespaces(_ context.Context, orgID int64, _ *user.SignedInUser) (map[string]*folder.Folder, error) {
@@ -244,7 +245,7 @@ func (f *RuleStore) GetUserVisibleNamespaces(_ context.Context, orgID int64, _ *
 	return namespacesMap, nil
 }
 
-func (f *RuleStore) GetNamespaceByTitle(_ context.Context, title string, orgID int64, _ *user.SignedInUser, _ bool) (*folder.Folder, error) {
+func (f *RuleStore) GetNamespaceByTitle(_ context.Context, title string, orgID int64, _ *user.SignedInUser) (*folder.Folder, error) {
 	folders := f.Folders[orgID]
 	for _, folder := range folders {
 		if folder.Title == title {
@@ -257,7 +258,7 @@ func (f *RuleStore) GetNamespaceByTitle(_ context.Context, title string, orgID i
 func (f *RuleStore) GetNamespaceByUID(_ context.Context, uid string, orgID int64, _ *user.SignedInUser) (*folder.Folder, error) {
 	f.RecordedOps = append(f.RecordedOps, GenericRecordedQuery{
 		Name:   "GetNamespaceByUID",
-		Params: []interface{}{orgID, uid},
+		Params: []any{orgID, uid},
 	})
 
 	folders := f.Folders[orgID]
@@ -322,7 +323,7 @@ func (f *RuleStore) IncreaseVersionForAllRulesInNamespace(_ context.Context, org
 
 	f.RecordedOps = append(f.RecordedOps, GenericRecordedQuery{
 		Name:   "IncreaseVersionForAllRulesInNamespace",
-		Params: []interface{}{orgID, namespaceUID},
+		Params: []any{orgID, namespaceUID},
 	})
 
 	var result []models.AlertRuleKeyWithVersionAndPauseStatus
@@ -344,5 +345,9 @@ func (f *RuleStore) IncreaseVersionForAllRulesInNamespace(_ context.Context, org
 }
 
 func (f *RuleStore) Count(ctx context.Context, orgID int64) (int64, error) {
+	return 0, nil
+}
+
+func (f *RuleStore) CountInFolder(ctx context.Context, orgID int64, folderUID string, u *user.SignedInUser) (int64, error) {
 	return 0, nil
 }

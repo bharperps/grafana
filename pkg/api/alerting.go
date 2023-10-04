@@ -116,12 +116,12 @@ func (hs *HTTPServer) GetAlerts(c *contextmodel.ReqContext) response.Response {
 			Permission:   dashboards.PERMISSION_VIEW,
 		}
 
-		err := hs.SearchService.SearchHandler(c.Req.Context(), &searchQuery)
+		hits, err := hs.SearchService.SearchHandler(c.Req.Context(), &searchQuery)
 		if err != nil {
 			return response.Error(500, "List alerts failed", err)
 		}
 
-		for _, d := range searchQuery.Result {
+		for _, d := range hits {
 			if d.Type == model.DashHitDB && d.ID > 0 {
 				dashboardIDs = append(dashboardIDs, d.ID)
 			}
@@ -695,7 +695,7 @@ func (hs *HTTPServer) PauseAlert(legacyAlertingEnabled *bool) func(c *contextmod
 		if err != nil {
 			return response.Error(http.StatusBadRequest, "alertId is invalid", err)
 		}
-		result := make(map[string]interface{})
+		result := make(map[string]any)
 		result["alertId"] = alertID
 
 		query := alertmodels.GetAlertByIdQuery{ID: alertID}
@@ -789,7 +789,7 @@ func (hs *HTTPServer) PauseAllAlerts(legacyAlertingEnabled *bool) func(c *contex
 			pausedState = "paused"
 		}
 
-		result := map[string]interface{}{
+		result := map[string]any{
 			"state":          resp,
 			"message":        "alerts " + pausedState,
 			"alertsAffected": updateCmd.ResultCount,

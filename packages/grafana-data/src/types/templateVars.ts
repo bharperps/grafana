@@ -22,10 +22,6 @@ export type TypedVariableModel =
   | OrgVariableModel
   | DashboardVariableModel;
 
-type VarValue = string | number | boolean | undefined;
-
-export type VariableMap = Record<string, VarValue>;
-
 export enum VariableRefresh {
   never, // removed from the UI
   onDashboardLoad,
@@ -52,13 +48,18 @@ export interface AdHocVariableFilter {
   key: string;
   operator: string;
   value: string;
-  condition: string;
+  /** @deprecated  */
+  condition?: string;
 }
 
 export interface AdHocVariableModel extends BaseVariableModel {
   type: 'adhoc';
   datasource: DataSourceRef | null;
   filters: AdHocVariableFilter[];
+  /**
+   * Filters that are always applied to the lookup of keys. Not shown in the AdhocFilterBuilder UI.
+   */
+  baseFilters?: AdHocVariableFilter[];
 }
 
 export interface VariableOption {
@@ -113,7 +114,7 @@ export interface VariableWithMultiSupport extends VariableWithOptions {
 }
 
 export interface VariableWithOptions extends BaseVariableModel {
-  current: VariableOption;
+  current: VariableOption | Record<string, never>;
   options: VariableOption[];
   query: string;
 }

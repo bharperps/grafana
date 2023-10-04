@@ -45,11 +45,12 @@ func StartGrafanaEnv(t *testing.T, grafDir, cfgPath string) (string, *server.Tes
 	setting.IsEnterprise = extensions.IsEnterprise
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	cmdLineArgs := setting.CommandLineArgs{Config: cfgPath, HomePath: grafDir}
+	cfg, err := setting.NewCfgFromArgs(setting.CommandLineArgs{Config: cfgPath, HomePath: grafDir})
+	require.NoError(t, err)
 	serverOpts := server.Options{Listener: listener, HomePath: grafDir}
 	apiServerOpts := api.ServerOptions{Listener: listener}
 
-	env, err := server.InitializeForTest(cmdLineArgs, serverOpts, apiServerOpts)
+	env, err := server.InitializeForTest(cfg, serverOpts, apiServerOpts)
 	require.NoError(t, err)
 	require.NoError(t, env.SQLStore.Sync())
 
@@ -57,6 +58,18 @@ func StartGrafanaEnv(t *testing.T, grafDir, cfgPath string) (string, *server.Tes
 	dbSec, err := env.SQLStore.Cfg.Raw.GetSection("database")
 	require.NoError(t, err)
 	assert.Greater(t, dbSec.Key("query_retries").MustInt(), 0)
+
+	env.Server.HTTPServer.AddMiddleware(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if env.RequestMiddleware != nil {
+				h := env.RequestMiddleware(next)
+				h.ServeHTTP(w, r)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	})
 
 	go func() {
 		// When the server runs, it will also build and initialize the service graph
@@ -214,6 +227,11 @@ func CreateGrafDir(t *testing.T, opts ...GrafanaOpts) (string, string) {
 	rbacSect, err := cfg.NewSection("rbac")
 	require.NoError(t, err)
 	_, err = rbacSect.NewKey("permission_cache", "false")
+	require.NoError(t, err)
+
+	analyticsSect, err := cfg.NewSection("analytics")
+	require.NoError(t, err)
+	_, err = analyticsSect.NewKey("intercom_secret", "intercom_secret_at_config")
 	require.NoError(t, err)
 
 	getOrCreateSection := func(name string) (*ini.Section, error) {

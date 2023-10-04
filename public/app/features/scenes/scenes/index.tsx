@@ -1,13 +1,10 @@
-import { DashboardScene } from '../dashboard/DashboardScene';
+import { DashboardScene } from '../../dashboard-scene/scene/DashboardScene';
 
-import { getFlexLayoutTest, getRepeaterSceneWithFlexWrap, getScenePanelRepeaterTest } from './demo';
-import { getGridLayoutTest } from './grid';
 import { getGridWithMultipleTimeRanges } from './gridMultiTimeRange';
 import { getMultipleGridLayoutTest } from './gridMultiple';
 import { getGridWithMultipleData } from './gridWithMultipleData';
-import { getGridWithRowLayoutTest } from './gridWithRow';
-import { getNestedScene } from './nested';
 import { getQueryVariableDemo } from './queryVariableDemo';
+import { getRepeatingPanelsDemo, getRepeatingRowsDemo } from './repeatingPanels';
 import { getSceneWithRows } from './sceneWithRows';
 import { getTransformationsDemo } from './transformations';
 import { getVariablesDemo, getVariablesDemoWithAll } from './variablesDemo';
@@ -18,18 +15,14 @@ interface SceneDef {
 }
 export function getScenes(): SceneDef[] {
   return [
-    { title: 'Flex layout test', getScene: getFlexLayoutTest },
-    { title: 'Panel repeater test', getScene: getScenePanelRepeaterTest },
-    { title: 'Panel repeater test flex wrap', getScene: getRepeaterSceneWithFlexWrap },
-    { title: 'Nested Scene demo', getScene: getNestedScene },
     { title: 'Scene with rows', getScene: getSceneWithRows },
-    { title: 'Grid layout test', getScene: getGridLayoutTest },
-    { title: 'Grid with row layout test', getScene: getGridWithRowLayoutTest },
     { title: 'Grid with rows and different queries', getScene: getGridWithMultipleData },
     { title: 'Grid with rows and different queries and time ranges', getScene: getGridWithMultipleTimeRanges },
     { title: 'Multiple grid layouts test', getScene: getMultipleGridLayoutTest },
     { title: 'Variables', getScene: getVariablesDemo },
     { title: 'Variables with All values', getScene: getVariablesDemoWithAll },
+    { title: 'Variables - Repeating panels', getScene: getRepeatingPanelsDemo },
+    { title: 'Variables - Repeating rows', getScene: getRepeatingRowsDemo },
     { title: 'Query variable', getScene: getQueryVariableDemo },
     { title: 'Transformations demo', getScene: getTransformationsDemo },
   ];

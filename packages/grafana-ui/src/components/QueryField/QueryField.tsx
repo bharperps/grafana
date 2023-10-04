@@ -10,15 +10,6 @@ import { GrafanaTheme2 } from '@grafana/data';
 import { selectors } from '@grafana/e2e-selectors';
 
 import {
-  makeValue,
-  SCHEMA,
-  CompletionItemGroup,
-  TypeaheadOutput,
-  TypeaheadInput,
-  SuggestionsState,
-  Themeable2,
-} from '../..';
-import {
   ClearPlugin,
   NewlinePlugin,
   SelectionShortcutsPlugin,
@@ -29,6 +20,9 @@ import {
 } from '../../slate-plugins';
 import { withTheme2 } from '../../themes';
 import { getFocusStyles } from '../../themes/mixins';
+import { CompletionItemGroup, SuggestionsState, TypeaheadInput, TypeaheadOutput } from '../../types/completion';
+import { Themeable2 } from '../../types/theme';
+import { makeValue, SCHEMA } from '../../utils/slate';
 
 export interface QueryFieldProps extends Themeable2 {
   additionalPlugins?: Plugin[];
@@ -241,13 +235,17 @@ export class UnThemedQueryField extends PureComponent<QueryFieldProps, QueryFiel
 
 export const QueryField = withTheme2(UnThemedQueryField);
 
+// By default QueryField calls onChange if onBlur is not defined, this will trigger a rerender
+// And slate will claim the focus, making it impossible to leave the field.
+QueryField.defaultProps = {
+  onBlur: () => {},
+};
+
 const getStyles = (theme: GrafanaTheme2) => {
   const focusStyles = getFocusStyles(theme);
   return {
-    wrapper: css`
-      &:focus-within {
-        ${focusStyles}
-      }
-    `,
+    wrapper: css({
+      '&:focus-within': focusStyles,
+    }),
   };
 };

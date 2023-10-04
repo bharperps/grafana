@@ -9,17 +9,17 @@ import (
 
 type AuthInfoService interface {
 	LookupAndUpdate(ctx context.Context, query *GetUserByAuthInfoQuery) (*user.User, error)
-	GetAuthInfo(ctx context.Context, query *GetAuthInfoQuery) error
+	GetAuthInfo(ctx context.Context, query *GetAuthInfoQuery) (*UserAuth, error)
 	GetUserLabels(ctx context.Context, query GetUserLabelsQuery) (map[int64]string, error)
-	GetExternalUserInfoByLogin(ctx context.Context, query *GetExternalUserInfoByLoginQuery) error
+	GetExternalUserInfoByLogin(ctx context.Context, query *GetExternalUserInfoByLoginQuery) (*ExternalUserInfo, error)
 	SetAuthInfo(ctx context.Context, cmd *SetAuthInfoCommand) error
 	UpdateAuthInfo(ctx context.Context, cmd *UpdateAuthInfoCommand) error
 	DeleteUserAuthInfo(ctx context.Context, userID int64) error
 }
 
 type Store interface {
-	GetExternalUserInfoByLogin(ctx context.Context, query *GetExternalUserInfoByLoginQuery) error
-	GetAuthInfo(ctx context.Context, query *GetAuthInfoQuery) error
+	GetExternalUserInfoByLogin(ctx context.Context, query *GetExternalUserInfoByLoginQuery) (*ExternalUserInfo, error)
+	GetAuthInfo(ctx context.Context, query *GetAuthInfoQuery) (*UserAuth, error)
 	GetUserLabels(ctx context.Context, query GetUserLabelsQuery) (map[int64]string, error)
 	SetAuthInfo(ctx context.Context, cmd *SetAuthInfoCommand) error
 	UpdateAuthInfo(ctx context.Context, cmd *UpdateAuthInfoCommand) error
@@ -29,17 +29,20 @@ type Store interface {
 	GetUserById(ctx context.Context, id int64) (*user.User, error)
 	GetUserByLogin(ctx context.Context, login string) (*user.User, error)
 	GetUserByEmail(ctx context.Context, email string) (*user.User, error)
-	CollectLoginStats(ctx context.Context) (map[string]interface{}, error)
+	CollectLoginStats(ctx context.Context) (map[string]any, error)
 	RunMetricsCollection(ctx context.Context) error
 	GetLoginStats(ctx context.Context) (LoginStats, error)
 }
 
 const (
 	// modules
+	PasswordAuthModule  = "password"
+	APIKeyAuthModule    = "apikey"
 	SAMLAuthModule      = "auth.saml"
 	LDAPAuthModule      = "ldap"
 	AuthProxyAuthModule = "authproxy"
 	JWTModule           = "jwt"
+	ExtendedJWTModule   = "extendedjwt"
 	RenderModule        = "render"
 	// OAuth provider modules
 	AzureADAuthModule    = "oauth_azuread"
@@ -111,6 +114,26 @@ func IsExternallySynced(cfg *setting.Cfg, authModule string) bool {
 	return true
 }
 
+// IsGrafanaAdminExternallySynced returns true if Grafana server admin role is being managed by an external auth provider, and false otherwise.
+// Grafana admin role sync is available for JWT, OAuth providers and LDAP.
+// For JWT and OAuth providers there is an additional config option `allow_assign_grafana_admin` that has to be enabled for Grafana Admin role to be synced.
+func IsGrafanaAdminExternallySynced(cfg *setting.Cfg, authModule string, oAuthAndAllowAssignGrafanaAdmin bool) bool {
+	if !IsExternallySynced(cfg, authModule) {
+		return false
+	}
+
+	switch authModule {
+	case JWTModule:
+		return cfg.JWTAuthAllowAssignGrafanaAdmin
+	case SAMLAuthModule:
+		return cfg.SAMLRoleValuesGrafanaAdmin != ""
+	case LDAPAuthModule:
+		return true
+	default:
+		return oAuthAndAllowAssignGrafanaAdmin
+	}
+}
+
 func IsProviderEnabled(cfg *setting.Cfg, authModule string) bool {
 	switch authModule {
 	case SAMLAuthModule:
@@ -130,7 +153,7 @@ func IsProviderEnabled(cfg *setting.Cfg, authModule string) bool {
 	case GithubAuthModule:
 		return cfg.GitHubAuthEnabled
 	case GrafanaComAuthModule:
-		return cfg.GrafanaComAuthEnabled
+		return cfg.GrafanaComAuthEnabled || cfg.GrafanaNetAuthEnabled
 	case GenericOAuthModule:
 		return cfg.GenericOAuthAuthEnabled
 	}

@@ -17,6 +17,7 @@ import { getPanelInspectorStyles2 } from '../inspector/styles';
 import { reportPanelInspectInteraction } from '../search/page/reporting';
 
 import { InspectTab } from './types';
+import { getPrettyJSON } from './utils/utils';
 
 enum ShowContent {
   PanelJSON = 'panel',
@@ -186,21 +187,4 @@ async function getJSONObject(show: ShowContent, panel?: PanelModel, data?: Panel
   }
 
   return { note: t('dashboard.inspect-json.unknown', 'Unknown Object: {{show}}', { show }) };
-}
-
-function getPrettyJSON(obj: any): string {
-  let r = '';
-  try {
-    r = JSON.stringify(obj, null, 2);
-  } catch (e) {
-    if (
-      e instanceof Error &&
-      (e.toString().includes('RangeError') || e.toString().includes('allocation size overflow'))
-    ) {
-      appEvents.emit(AppEvents.alertError, [e.toString(), 'Cannot display JSON, the object is too big.']);
-    } else {
-      appEvents.emit(AppEvents.alertError, [e instanceof Error ? e.toString() : e]);
-    }
-  }
-  return r;
 }

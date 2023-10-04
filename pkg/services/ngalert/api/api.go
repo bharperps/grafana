@@ -7,11 +7,11 @@ import (
 
 	"github.com/grafana/grafana/pkg/api/routing"
 	"github.com/grafana/grafana/pkg/infra/log"
+	"github.com/grafana/grafana/pkg/infra/tracing"
 	"github.com/grafana/grafana/pkg/services/accesscontrol"
 	"github.com/grafana/grafana/pkg/services/datasourceproxy"
 	"github.com/grafana/grafana/pkg/services/datasources"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
-	apimodels "github.com/grafana/grafana/pkg/services/ngalert/api/tooling/definitions"
 	"github.com/grafana/grafana/pkg/services/ngalert/backtesting"
 	"github.com/grafana/grafana/pkg/services/ngalert/eval"
 	"github.com/grafana/grafana/pkg/services/ngalert/metrics"
@@ -33,29 +33,8 @@ type ExternalAlertmanagerProvider interface {
 	DroppedAlertmanagersFor(orgID int64) []*url.URL
 }
 
-type Alertmanager interface {
-	// Configuration
-	SaveAndApplyConfig(ctx context.Context, config *apimodels.PostableUserConfig) error
-	SaveAndApplyDefaultConfig(ctx context.Context) error
-	GetStatus() apimodels.GettableStatus
-
-	// Silences
-	CreateSilence(ps *apimodels.PostableSilence) (string, error)
-	DeleteSilence(silenceID string) error
-	GetSilence(silenceID string) (apimodels.GettableSilence, error)
-	ListSilences(filter []string) (apimodels.GettableSilences, error)
-
-	// Alerts
-	GetAlerts(active, silenced, inhibited bool, filter []string, receiver string) (apimodels.GettableAlerts, error)
-	GetAlertGroups(active, silenced, inhibited bool, filter []string, receiver string) (apimodels.AlertGroups, error)
-
-	// Receivers
-	GetReceivers(ctx context.Context) []apimodels.Receiver
-	TestReceivers(ctx context.Context, c apimodels.TestReceiversConfigBodyParams) (*notifier.TestReceiversResult, error)
-}
-
 type AlertingStore interface {
-	GetLatestAlertmanagerConfiguration(ctx context.Context, query *models.GetLatestAlertmanagerConfigurationQuery) error
+	GetLatestAlertmanagerConfiguration(ctx context.Context, query *models.GetLatestAlertmanagerConfigurationQuery) (*models.AlertConfiguration, error)
 }
 
 // API handlers.
@@ -83,8 +62,11 @@ type API struct {
 	EvaluatorFactory     eval.EvaluatorFactory
 	FeatureManager       featuremgmt.FeatureToggles
 	Historian            Historian
+	Tracer               tracing.Tracer
+	AppUrl               *url.URL
 
-	AppUrl *url.URL
+	// Hooks can be used to replace API handlers for specific paths.
+	Hooks *Hooks
 }
 
 // RegisterAPIEndpoints registers API handlers
@@ -130,8 +112,10 @@ func (api *API) RegisterAPIEndpoints(m *metrics.API) {
 			accessControl:   api.AccessControl,
 			evaluator:       api.EvaluatorFactory,
 			cfg:             &api.Cfg.UnifiedAlerting,
-			backtesting:     backtesting.NewEngine(api.AppUrl, api.EvaluatorFactory),
+			backtesting:     backtesting.NewEngine(api.AppUrl, api.EvaluatorFactory, api.Tracer),
 			featureManager:  api.FeatureManager,
+			appUrl:          api.AppUrl,
+			tracer:          api.Tracer,
 		}), m)
 	api.RegisterConfigurationApiEndpoints(NewConfiguration(
 		&ConfigSrv{

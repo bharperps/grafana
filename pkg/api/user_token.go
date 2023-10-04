@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/grafana/pkg/api/response"
 	"github.com/grafana/grafana/pkg/infra/network"
 	"github.com/grafana/grafana/pkg/services/auth"
+	"github.com/grafana/grafana/pkg/services/auth/identity"
 	"github.com/grafana/grafana/pkg/services/authn"
 	contextmodel "github.com/grafana/grafana/pkg/services/contexthandler/model"
 	"github.com/grafana/grafana/pkg/services/user"
@@ -31,7 +32,17 @@ import (
 // 403: forbiddenError
 // 500: internalServerError
 func (hs *HTTPServer) GetUserAuthTokens(c *contextmodel.ReqContext) response.Response {
-	return hs.getUserAuthTokensInternal(c, c.UserID)
+	namespace, identifier := c.SignedInUser.GetNamespacedID()
+	if namespace != identity.NamespaceUser {
+		return response.Error(http.StatusForbidden, "entity not allowed to revoke tokens", nil)
+	}
+
+	userID, err := identity.IntIdentifier(namespace, identifier)
+	if err != nil {
+		return response.Error(http.StatusInternalServerError, "failed to parse user id", err)
+	}
+
+	return hs.getUserAuthTokensInternal(c, userID)
 }
 
 // swagger:route POST /user/revoke-auth-token signed_in_user revokeUserAuthToken
@@ -51,7 +62,18 @@ func (hs *HTTPServer) RevokeUserAuthToken(c *contextmodel.ReqContext) response.R
 	if err := web.Bind(c.Req, &cmd); err != nil {
 		return response.Error(http.StatusBadRequest, "bad request data", err)
 	}
-	return hs.revokeUserAuthTokenInternal(c, c.UserID, cmd)
+
+	namespace, identifier := c.SignedInUser.GetNamespacedID()
+	if namespace != identity.NamespaceUser {
+		return response.Error(http.StatusForbidden, "entity not allowed to revoke tokens", nil)
+	}
+
+	userID, err := identity.IntIdentifier(namespace, identifier)
+	if err != nil {
+		return response.Error(http.StatusInternalServerError, "failed to parse user id", err)
+	}
+
+	return hs.revokeUserAuthTokenInternal(c, userID, cmd)
 }
 
 func (hs *HTTPServer) RotateUserAuthTokenRedirect(c *contextmodel.ReqContext) response.Response {
@@ -86,7 +108,7 @@ func (hs *HTTPServer) RotateUserAuthToken(c *contextmodel.ReqContext) response.R
 		}
 
 		if errors.Is(err, auth.ErrUserTokenNotFound) {
-			return response.ErrOrFallback(http.StatusNotFound, http.StatusText(http.StatusFound), err)
+			return response.ErrOrFallback(http.StatusUnauthorized, http.StatusText(http.StatusUnauthorized), err)
 		}
 
 		return response.ErrOrFallback(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError), err)
@@ -234,7 +256,7 @@ func (hs *HTTPServer) revokeUserAuthTokenInternal(c *contextmodel.ReqContext, us
 		return response.Error(400, "Cannot revoke active user auth token", nil)
 	}
 
-	err = hs.AuthTokenService.RevokeToken(c.Req.Context(), token, true)
+	err = hs.AuthTokenService.RevokeToken(c.Req.Context(), token, false)
 	if err != nil {
 		if errors.Is(err, auth.ErrUserTokenNotFound) {
 			return response.Error(404, "User auth token not found", err)

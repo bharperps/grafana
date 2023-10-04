@@ -3,6 +3,7 @@ package folderimpl
 import (
 	"context"
 	"fmt"
+	"sort"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -27,7 +28,7 @@ func TestIntegrationCreate(t *testing.T) {
 	}
 
 	db := sqlstore.InitTestDB(t)
-	folderStore := ProvideStore(db, db.Cfg, &featuremgmt.FeatureManager{})
+	folderStore := ProvideStore(db, db.Cfg, featuremgmt.WithFeatures(featuremgmt.FlagNestedFolders))
 
 	orgID := CreateOrg(t, db)
 
@@ -71,6 +72,7 @@ func TestIntegrationCreate(t *testing.T) {
 		assert.NotEmpty(t, f.ID)
 		assert.Equal(t, uid, f.UID)
 		assert.Empty(t, f.ParentUID)
+		assert.NotEmpty(t, f.URL)
 
 		ff, err := folderStore.Get(context.Background(), folder.GetFolderQuery{
 			UID:   &f.UID,
@@ -80,6 +82,7 @@ func TestIntegrationCreate(t *testing.T) {
 		assert.Equal(t, folderTitle, ff.Title)
 		assert.Equal(t, folderDsc, ff.Description)
 		assert.Empty(t, ff.ParentUID)
+		assert.NotEmpty(t, ff.URL)
 
 		assertAncestorUIDs(t, folderStore, f, []string{folder.GeneralFolderUID})
 	})
@@ -95,6 +98,7 @@ func TestIntegrationCreate(t *testing.T) {
 		require.Equal(t, "parent", parent.Title)
 		require.NotEmpty(t, parent.ID)
 		assert.Equal(t, parentUID, parent.UID)
+		assert.NotEmpty(t, parent.URL)
 
 		t.Cleanup(func() {
 			err := folderStore.Delete(context.Background(), parent.UID, orgID)
@@ -121,6 +125,7 @@ func TestIntegrationCreate(t *testing.T) {
 		assert.NotEmpty(t, f.ID)
 		assert.Equal(t, uid, f.UID)
 		assert.Equal(t, parentUID, f.ParentUID)
+		assert.NotEmpty(t, f.URL)
 
 		assertAncestorUIDs(t, folderStore, f, []string{folder.GeneralFolderUID, parent.UID})
 		assertChildrenUIDs(t, folderStore, parent, []string{f.UID})
@@ -133,6 +138,7 @@ func TestIntegrationCreate(t *testing.T) {
 		assert.Equal(t, folderTitle, ff.Title)
 		assert.Equal(t, folderDsc, ff.Description)
 		assert.Equal(t, parentUID, ff.ParentUID)
+		assert.NotEmpty(t, ff.URL)
 	})
 }
 
@@ -142,7 +148,7 @@ func TestIntegrationDelete(t *testing.T) {
 	}
 
 	db := sqlstore.InitTestDB(t)
-	folderStore := ProvideStore(db, db.Cfg, &featuremgmt.FeatureManager{})
+	folderStore := ProvideStore(db, db.Cfg, featuremgmt.WithFeatures(featuremgmt.FlagNestedFolders))
 
 	orgID := CreateOrg(t, db)
 
@@ -189,18 +195,30 @@ func TestIntegrationUpdate(t *testing.T) {
 	}
 
 	db := sqlstore.InitTestDB(t)
-	folderStore := ProvideStore(db, db.Cfg, &featuremgmt.FeatureManager{})
+	folderStore := ProvideStore(db, db.Cfg, featuremgmt.WithFeatures(featuremgmt.FlagNestedFolders))
 
 	orgID := CreateOrg(t, db)
 
-	// create folder
-	f, err := folderStore.Create(context.Background(), folder.CreateFolderCommand{
+	// create parent folder
+	parent, err := folderStore.Create(context.Background(), folder.CreateFolderCommand{
 		Title:       folderTitle,
 		Description: folderDsc,
 		OrgID:       orgID,
 		UID:         util.GenerateShortUID(),
 	})
 	require.NoError(t, err)
+
+	// create subfolder
+	f, err := folderStore.Create(context.Background(), folder.CreateFolderCommand{
+		Title:       folderTitle,
+		Description: folderDsc,
+		OrgID:       orgID,
+		UID:         util.GenerateShortUID(),
+		ParentUID:   parent.UID,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, f.ParentUID, parent.UID)
 	t.Cleanup(func() {
 		err := folderStore.Delete(context.Background(), f.UID, orgID)
 		require.NoError(t, err)
@@ -250,6 +268,8 @@ func TestIntegrationUpdate(t *testing.T) {
 		assert.Equal(t, f.UID, updated.UID)
 		assert.Equal(t, newTitle, updated.Title)
 		assert.Equal(t, newDesc, updated.Description)
+		assert.Equal(t, parent.UID, updated.ParentUID)
+		assert.NotEmpty(t, updated.URL)
 		// assert.GreaterOrEqual(t, updated.Updated.UnixNano(), existingUpdated.UnixNano())
 
 		updated, err = folderStore.Get(context.Background(), folder.GetFolderQuery{
@@ -259,31 +279,88 @@ func TestIntegrationUpdate(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, newTitle, updated.Title)
 		assert.Equal(t, newDesc, updated.Description)
+		// parent should not change
+		assert.Equal(t, parent.UID, updated.ParentUID)
+		assert.NotEmpty(t, updated.URL)
 
 		f = updated
 	})
 
-	t.Run("updating folder UID should succeed", func(t *testing.T) {
-		newUID := "new"
-		existingTitle := f.Title
-		existingDesc := f.Description
-		updated, err := folderStore.Update(context.Background(), folder.UpdateFolderCommand{
-			UID:    f.UID,
-			OrgID:  f.OrgID,
-			NewUID: &newUID,
-		})
-		require.NoError(t, err)
+	t.Run("updating folder parent UID", func(t *testing.T) {
+		testCases := []struct {
+			desc                  string
+			reqNewParentUID       *string
+			expectedError         error
+			expectedParentUIDFunc func(existing string) string
+		}{
+			{
+				desc:                  "should succeed when moving to other folder",
+				reqNewParentUID:       util.Pointer("new"),
+				expectedParentUIDFunc: func(_ string) string { return "new" },
+			},
+			{
+				desc:                  "should succeed when moving to root folder (NewParentUID is empty)",
+				reqNewParentUID:       util.Pointer(""),
+				expectedParentUIDFunc: func(_ string) string { return "" },
+			},
+			{
+				desc:                  "should do nothing when NewParentUID is nil",
+				reqNewParentUID:       nil,
+				expectedError:         folder.ErrBadRequest,
+				expectedParentUIDFunc: func(existingParentUID string) string { return existingParentUID },
+			},
+		}
 
-		assert.Equal(t, newUID, updated.UID)
+		for _, tc := range testCases {
+			t.Run(tc.desc, func(t *testing.T) {
+				// create parent folder
+				parentUID := util.GenerateShortUID()
+				_, err := folderStore.Create(context.Background(), folder.CreateFolderCommand{
+					Title:       "parent",
+					Description: "parent",
+					OrgID:       orgID,
+					UID:         parentUID,
+				})
+				require.NoError(t, err)
 
-		updated, err = folderStore.Get(context.Background(), folder.GetFolderQuery{
-			UID:   &updated.UID,
-			OrgID: orgID,
-		})
-		require.NoError(t, err)
-		assert.Equal(t, newUID, updated.UID)
-		assert.Equal(t, existingTitle, updated.Title)
-		assert.Equal(t, existingDesc, updated.Description)
+				// create subfolder
+				UID := util.GenerateShortUID()
+				f, err = folderStore.Create(context.Background(), folder.CreateFolderCommand{
+					Title:       "subfolder",
+					Description: "subfolder",
+					OrgID:       orgID,
+					UID:         UID,
+					ParentUID:   parentUID,
+				})
+				require.NoError(t, err)
+
+				existingTitle := f.Title
+				existingDesc := f.Description
+				existingUID := f.UID
+				updated, err := folderStore.Update(context.Background(), folder.UpdateFolderCommand{
+					UID:          f.UID,
+					OrgID:        f.OrgID,
+					NewParentUID: tc.reqNewParentUID,
+				})
+				if tc.expectedError == nil {
+					require.NoError(t, err)
+					assert.Equal(t, tc.expectedParentUIDFunc(parentUID), updated.ParentUID)
+				} else {
+					assert.ErrorIs(t, err, tc.expectedError)
+				}
+
+				updated, err = folderStore.Get(context.Background(), folder.GetFolderQuery{
+					UID:   &f.UID,
+					OrgID: orgID,
+				})
+				require.NoError(t, err)
+				assert.Equal(t, tc.expectedParentUIDFunc(parentUID), updated.ParentUID)
+				assert.Equal(t, existingTitle, updated.Title)
+				assert.Equal(t, existingDesc, updated.Description)
+				assert.Equal(t, existingUID, updated.UID)
+				assert.NotEmpty(t, updated.URL)
+			})
+		}
 	})
 }
 
@@ -293,7 +370,7 @@ func TestIntegrationGet(t *testing.T) {
 	}
 
 	db := sqlstore.InitTestDB(t)
-	folderStore := ProvideStore(db, db.Cfg, &featuremgmt.FeatureManager{})
+	folderStore := ProvideStore(db, db.Cfg, featuremgmt.WithFeatures(featuremgmt.FlagNestedFolders))
 
 	orgID := CreateOrg(t, db)
 
@@ -304,6 +381,17 @@ func TestIntegrationGet(t *testing.T) {
 		Description: folderDsc,
 		OrgID:       orgID,
 		UID:         uid1,
+	})
+	require.NoError(t, err)
+
+	// create subfolder with same title
+	subfolderUID := util.GenerateShortUID()
+	subfolder, err := folderStore.Create(context.Background(), folder.CreateFolderCommand{
+		Title:       folderTitle,
+		Description: folderDsc,
+		OrgID:       orgID,
+		UID:         subfolderUID,
+		ParentUID:   f.UID,
 	})
 	require.NoError(t, err)
 
@@ -328,14 +416,14 @@ func TestIntegrationGet(t *testing.T) {
 		assert.Equal(t, f.OrgID, ff.OrgID)
 		assert.Equal(t, f.Title, ff.Title)
 		assert.Equal(t, f.Description, ff.Description)
-		//assert.Equal(t, folder.GeneralFolderUID, ff.ParentUID)
 		assert.NotEmpty(t, ff.Created)
 		assert.NotEmpty(t, ff.Updated)
+		assert.NotEmpty(t, ff.URL)
 	})
 
-	t.Run("get folder by title should succeed", func(t *testing.T) {
+	t.Run("get folder by title should return folder under root", func(t *testing.T) {
 		ff, err := folderStore.Get(context.Background(), folder.GetFolderQuery{
-			Title: &f.Title,
+			Title: &folderTitle,
 			OrgID: orgID,
 		})
 		require.NoError(t, err)
@@ -344,12 +432,30 @@ func TestIntegrationGet(t *testing.T) {
 		assert.Equal(t, f.OrgID, ff.OrgID)
 		assert.Equal(t, f.Title, ff.Title)
 		assert.Equal(t, f.Description, ff.Description)
-		//assert.Equal(t, folder.GeneralFolderUID, ff.ParentUID)
 		assert.NotEmpty(t, ff.Created)
 		assert.NotEmpty(t, ff.Updated)
+		assert.NotEmpty(t, ff.URL)
 	})
 
-	t.Run("get folder by title should succeed", func(t *testing.T) {
+	t.Run("get folder by title and parent UID should return subfolder", func(t *testing.T) {
+		ff, err := folderStore.Get(context.Background(), folder.GetFolderQuery{
+			Title:     &folderTitle,
+			OrgID:     orgID,
+			ParentUID: &f.UID,
+		})
+		require.NoError(t, err)
+		assert.Equal(t, subfolder.ID, ff.ID)
+		assert.Equal(t, subfolder.UID, ff.UID)
+		assert.Equal(t, subfolder.OrgID, ff.OrgID)
+		assert.Equal(t, subfolder.Title, ff.Title)
+		assert.Equal(t, subfolder.Description, ff.Description)
+		assert.Equal(t, subfolder.ParentUID, ff.ParentUID)
+		assert.NotEmpty(t, subfolder.Created)
+		assert.NotEmpty(t, subfolder.Updated)
+		assert.NotEmpty(t, subfolder.URL)
+	})
+
+	t.Run("get folder by ID should succeed", func(t *testing.T) {
 		ff, err := folderStore.Get(context.Background(), folder.GetFolderQuery{
 			ID: &f.ID,
 		})
@@ -359,9 +465,9 @@ func TestIntegrationGet(t *testing.T) {
 		assert.Equal(t, f.OrgID, ff.OrgID)
 		assert.Equal(t, f.Title, ff.Title)
 		assert.Equal(t, f.Description, ff.Description)
-		//assert.Equal(t, folder.GeneralFolderUID, ff.ParentUID)
 		assert.NotEmpty(t, ff.Created)
 		assert.NotEmpty(t, ff.Updated)
+		assert.NotEmpty(t, ff.URL)
 	})
 }
 
@@ -371,7 +477,7 @@ func TestIntegrationGetParents(t *testing.T) {
 	}
 
 	db := sqlstore.InitTestDB(t)
-	folderStore := ProvideStore(db, db.Cfg, &featuremgmt.FeatureManager{})
+	folderStore := ProvideStore(db, db.Cfg, featuremgmt.WithFeatures(featuremgmt.FlagNestedFolders))
 
 	orgID := CreateOrg(t, db)
 
@@ -390,9 +496,10 @@ func TestIntegrationGetParents(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("get parents of unknown folder should return an error", func(t *testing.T) {
-		_, err := folderStore.GetParents(context.Background(), folder.GetParentsQuery{})
-		require.ErrorIs(t, err, folder.ErrFolderNotFound)
+	t.Run("get parents of root folder should be empty", func(t *testing.T) {
+		parents, err := folderStore.GetParents(context.Background(), folder.GetParentsQuery{})
+		require.NoError(t, err)
+		require.Empty(t, parents)
 	})
 
 	t.Run("get parents of 1-st level folder should be empty", func(t *testing.T) {
@@ -425,6 +532,7 @@ func TestIntegrationGetParents(t *testing.T) {
 		require.NoError(t, err)
 		parentUIDs := make([]string, 0)
 		for _, p := range parents {
+			assert.NotEmpty(t, p.URL)
 			parentUIDs = append(parentUIDs, p.UID)
 		}
 		require.Equal(t, []string{uid1}, parentUIDs)
@@ -437,7 +545,7 @@ func TestIntegrationGetChildren(t *testing.T) {
 	}
 
 	db := sqlstore.InitTestDB(t)
-	folderStore := ProvideStore(db, db.Cfg, &featuremgmt.FeatureManager{})
+	folderStore := ProvideStore(db, db.Cfg, featuremgmt.WithFeatures(featuremgmt.FlagNestedFolders))
 
 	orgID := CreateOrg(t, db)
 
@@ -452,6 +560,7 @@ func TestIntegrationGetChildren(t *testing.T) {
 	require.NoError(t, err)
 
 	treeLeaves := CreateLeaves(t, folderStore, parent, 8)
+	sort.Strings(treeLeaves)
 
 	t.Cleanup(func() {
 		for _, uid := range treeLeaves {
@@ -476,6 +585,7 @@ func TestIntegrationGetChildren(t *testing.T) {
 
 		childrenUIDs := make([]string, 0, len(children))
 		for _, c := range children {
+			assert.NotEmpty(t, c.URL)
 			childrenUIDs = append(childrenUIDs, c.UID)
 		}
 
@@ -492,6 +602,7 @@ func TestIntegrationGetChildren(t *testing.T) {
 
 		childrenUIDs := make([]string, 0, len(children))
 		for _, c := range children {
+			assert.NotEmpty(t, c.URL)
 			childrenUIDs = append(childrenUIDs, c.UID)
 		}
 		assert.Equal(t, []string{parent.UID}, childrenUIDs)
@@ -524,6 +635,7 @@ func TestIntegrationGetChildren(t *testing.T) {
 
 		childrenUIDs = make([]string, 0, len(children))
 		for _, c := range children {
+			assert.NotEmpty(t, c.URL)
 			childrenUIDs = append(childrenUIDs, c.UID)
 		}
 
@@ -541,6 +653,7 @@ func TestIntegrationGetChildren(t *testing.T) {
 
 		childrenUIDs = make([]string, 0, len(children))
 		for _, c := range children {
+			assert.NotEmpty(t, c.URL)
 			childrenUIDs = append(childrenUIDs, c.UID)
 		}
 
@@ -558,6 +671,7 @@ func TestIntegrationGetChildren(t *testing.T) {
 
 		childrenUIDs = make([]string, 0, len(children))
 		for _, c := range children {
+			assert.NotEmpty(t, c.URL)
 			childrenUIDs = append(childrenUIDs, c.UID)
 		}
 
@@ -575,6 +689,7 @@ func TestIntegrationGetChildren(t *testing.T) {
 
 		childrenUIDs = make([]string, 0, len(children))
 		for _, c := range children {
+			assert.NotEmpty(t, c.URL)
 			childrenUIDs = append(childrenUIDs, c.UID)
 		}
 
@@ -590,7 +705,7 @@ func TestIntegrationGetHeight(t *testing.T) {
 	}
 
 	db := sqlstore.InitTestDB(t)
-	folderStore := ProvideStore(db, db.Cfg, &featuremgmt.FeatureManager{})
+	folderStore := ProvideStore(db, db.Cfg, featuremgmt.WithFeatures(featuremgmt.FlagNestedFolders))
 
 	orgID := CreateOrg(t, db)
 
@@ -676,9 +791,10 @@ func CreateLeaves(t *testing.T, store *sqlStore, parent *folder.Folder, num int)
 
 	leaves := make([]string, 0)
 	for i := 0; i < num; i++ {
+		uid := util.GenerateShortUID()
 		f, err := store.Create(context.Background(), folder.CreateFolderCommand{
-			Title:     fmt.Sprintf("folder-%d", i),
-			UID:       util.GenerateShortUID(),
+			Title:     fmt.Sprintf("folder-%s", uid),
+			UID:       uid,
 			OrgID:     parent.OrgID,
 			ParentUID: parent.UID,
 		})

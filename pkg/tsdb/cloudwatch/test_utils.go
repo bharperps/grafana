@@ -56,6 +56,21 @@ func (m *fakeCWLogsClient) StopQueryWithContext(ctx context.Context, input *clou
 	}, nil
 }
 
+type mockLogsSyncClient struct {
+	cloudwatchlogsiface.CloudWatchLogsAPI
+
+	mock.Mock
+}
+
+func (m *mockLogsSyncClient) GetQueryResultsWithContext(ctx context.Context, input *cloudwatchlogs.GetQueryResultsInput, option ...request.Option) (*cloudwatchlogs.GetQueryResultsOutput, error) {
+	args := m.Called(ctx, input, option)
+	return args.Get(0).(*cloudwatchlogs.GetQueryResultsOutput), args.Error(1)
+}
+func (m *mockLogsSyncClient) StartQueryWithContext(ctx context.Context, input *cloudwatchlogs.StartQueryInput, option ...request.Option) (*cloudwatchlogs.StartQueryOutput, error) {
+	args := m.Called(ctx, input, option)
+	return args.Get(0).(*cloudwatchlogs.StartQueryOutput), args.Error(1)
+}
+
 func (m *fakeCWLogsClient) DescribeLogGroups(input *cloudwatchlogs.DescribeLogGroupsInput) (*cloudwatchlogs.DescribeLogGroupsOutput, error) {
 	m.calls.describeLogGroups = append(m.calls.describeLogGroups, input)
 	output := &m.logGroups[m.logGroupsIndex]
@@ -106,14 +121,29 @@ func (c *fakeCWAnnotationsClient) DescribeAlarms(params *cloudwatch.DescribeAlar
 	return c.describeAlarmsOutput, nil
 }
 
-type fakeEC2Client struct {
+type mockEC2Client struct {
+	mock.Mock
+}
+
+func (c *mockEC2Client) DescribeRegions(in *ec2.DescribeRegionsInput) (*ec2.DescribeRegionsOutput, error) {
+	args := c.Called(in)
+	return args.Get(0).(*ec2.DescribeRegionsOutput), args.Error(1)
+}
+
+func (c *mockEC2Client) DescribeInstancesPages(in *ec2.DescribeInstancesInput, fn func(*ec2.DescribeInstancesOutput, bool) bool) error {
+	args := c.Called(in, fn)
+	return args.Error(0)
+}
+
+// Please use mockEC2Client above, we are slowly migrating towards using testify's mocks only
+type oldEC2Client struct {
 	ec2iface.EC2API
 
 	regions      []string
 	reservations []*ec2.Reservation
 }
 
-func (c fakeEC2Client) DescribeRegions(*ec2.DescribeRegionsInput) (*ec2.DescribeRegionsOutput, error) {
+func (c oldEC2Client) DescribeRegions(*ec2.DescribeRegionsInput) (*ec2.DescribeRegionsOutput, error) {
 	regions := []*ec2.Region{}
 	for _, region := range c.regions {
 		regions = append(regions, &ec2.Region{
@@ -125,7 +155,7 @@ func (c fakeEC2Client) DescribeRegions(*ec2.DescribeRegionsInput) (*ec2.Describe
 	}, nil
 }
 
-func (c fakeEC2Client) DescribeInstancesPages(in *ec2.DescribeInstancesInput,
+func (c oldEC2Client) DescribeInstancesPages(in *ec2.DescribeInstancesInput,
 	fn func(*ec2.DescribeInstancesOutput, bool) bool) error {
 	reservations := []*ec2.Reservation{}
 	for _, r := range c.reservations {
@@ -224,4 +254,25 @@ type mockedCallResourceResponseSenderForOauth struct {
 func (s *mockedCallResourceResponseSenderForOauth) Send(resp *backend.CallResourceResponse) error {
 	s.Response = resp
 	return nil
+}
+
+type fakeAWSError struct {
+	code    string
+	message string
+}
+
+func (e fakeAWSError) OrigErr() error {
+	return nil
+}
+
+func (e fakeAWSError) Error() string {
+	return e.message
+}
+
+func (e fakeAWSError) Code() string {
+	return e.code
+}
+
+func (e fakeAWSError) Message() string {
+	return e.message
 }

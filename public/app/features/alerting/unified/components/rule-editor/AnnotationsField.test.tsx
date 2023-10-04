@@ -1,4 +1,4 @@
-import { findByText, findByTitle, render } from '@testing-library/react';
+import { findByRole, findByText, findByTitle, getByTestId, queryByText, render } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { rest } from 'msw';
 import { setupServer } from 'msw/node';
@@ -21,7 +21,7 @@ import { getDefaultFormValues } from '../../utils/rule-form';
 
 import 'whatwg-fetch';
 
-import AnnotationsField from './AnnotationsField';
+import AnnotationsStep from './AnnotationsStep';
 
 // To get anything displayed inside the Autosize component we need to mock it
 // Ref https://github.com/bvaughn/react-window/issues/454#issuecomment-646031139
@@ -33,7 +33,7 @@ jest.mock(
 );
 
 const ui = {
-  setDashboardButton: byRole('button', { name: 'Set dashboard and panel' }),
+  setDashboardButton: byRole('button', { name: 'Link dashboard and panel' }),
   annotationKeys: byTestId('annotation-key-', { exact: false }),
   annotationValues: byTestId('annotation-value-', { exact: false }),
   dashboardPicker: {
@@ -65,7 +65,7 @@ function FormWrapper({ formValues }: { formValues?: Partial<RuleFormValues> }) {
   return (
     <TestProvider store={store}>
       <FormProvider {...formApi}>
-        <AnnotationsField />
+        <AnnotationsStep />
       </FormProvider>
     </TestProvider>
   );
@@ -107,8 +107,8 @@ describe('AnnotationsField', function () {
           title: 'My dashboard',
           uid: 'dash-test-uid',
           panels: [
-            { id: 1, title: 'First panel' },
-            { id: 2, title: 'Second panel' },
+            { id: 1, title: 'First panel', type: 'timeseries' },
+            { id: 2, title: 'Second panel', type: 'timeseries' },
           ],
         })
       );
@@ -137,8 +137,8 @@ describe('AnnotationsField', function () {
           title: 'My dashboard',
           uid: 'dash-test-uid',
           panels: [
-            { id: 1, title: 'First panel' },
-            { id: 2, title: 'Second panel' },
+            { id: 1, title: 'First panel', type: 'graph' },
+            { id: 2, title: 'Second panel', type: 'graph' },
           ],
         })
       );
@@ -154,19 +154,78 @@ describe('AnnotationsField', function () {
 
       await user.click(ui.dashboardPicker.confirmButton.get());
 
-      const annotationKeyElements = ui.annotationKeys.getAll();
       const annotationValueElements = ui.annotationValues.getAll();
 
       expect(ui.dashboardPicker.dialog.query()).not.toBeInTheDocument();
 
-      expect(annotationKeyElements).toHaveLength(2);
       expect(annotationValueElements).toHaveLength(2);
-
-      expect(annotationKeyElements[0]).toHaveTextContent('Dashboard UID');
       expect(annotationValueElements[0]).toHaveTextContent('dash-test-uid');
-
-      expect(annotationKeyElements[1]).toHaveTextContent('Panel ID');
       expect(annotationValueElements[1]).toHaveTextContent('2');
+    });
+
+    it('should not show rows as panels', async function () {
+      mockSearchApiResponse(server, [
+        mockDashboardSearchItem({ title: 'My dashboard', uid: 'dash-test-uid', type: DashboardSearchItemType.DashDB }),
+      ]);
+
+      mockGetDashboardResponse(
+        mockDashboardDto({
+          title: 'My dashboard',
+          uid: 'dash-test-uid',
+          panels: [
+            { id: 1, title: 'Row panel', type: 'row' },
+            { id: 2, title: 'First panel', type: 'timeseries' },
+          ],
+        })
+      );
+
+      const user = userEvent.setup();
+
+      render(<FormWrapper />);
+
+      await user.click(ui.setDashboardButton.get());
+      expect(ui.dashboardPicker.confirmButton.get()).toBeDisabled();
+
+      await user.click(await findByTitle(ui.dashboardPicker.dialog.get(), 'My dashboard'));
+
+      expect(await findByText(ui.dashboardPicker.dialog.get(), 'First panel')).toBeInTheDocument();
+      expect(await queryByText(ui.dashboardPicker.dialog.get(), 'Row panel')).not.toBeInTheDocument();
+    });
+
+    it('should show panels within collapsed rows', async function () {
+      mockSearchApiResponse(server, [
+        mockDashboardSearchItem({ title: 'My dashboard', uid: 'dash-test-uid', type: DashboardSearchItemType.DashDB }),
+      ]);
+
+      mockGetDashboardResponse(
+        mockDashboardDto({
+          title: 'My dashboard',
+          uid: 'dash-test-uid',
+          panels: [
+            { id: 1, title: 'First panel', type: 'timeseries' },
+            {
+              id: 2,
+              title: 'Row panel',
+              collapsed: true,
+              type: 'row',
+              panels: [{ id: 3, title: 'Panel within collapsed row', type: 'timeseries' }],
+            },
+          ],
+        })
+      );
+
+      const user = userEvent.setup();
+
+      render(<FormWrapper />);
+
+      await user.click(ui.setDashboardButton.get());
+      expect(ui.dashboardPicker.confirmButton.get()).toBeDisabled();
+
+      await user.click(await findByTitle(ui.dashboardPicker.dialog.get(), 'My dashboard'));
+
+      expect(await findByText(ui.dashboardPicker.dialog.get(), 'First panel')).toBeInTheDocument();
+      expect(await queryByText(ui.dashboardPicker.dialog.get(), 'Row panel')).not.toBeInTheDocument();
+      expect(await findByText(ui.dashboardPicker.dialog.get(), 'Panel within collapsed row')).toBeInTheDocument();
     });
 
     // this test _should_ work in theory but something is stopping the 'onClick' function on the dashboard item
@@ -186,8 +245,8 @@ describe('AnnotationsField', function () {
           title: 'My dashboard',
           uid: 'dash-test-uid',
           panels: [
-            { id: 1, title: 'First panel' },
-            { id: 2, title: 'Second panel' },
+            { id: 1, title: 'First panel', type: 'timeseries' },
+            { id: 2, title: 'Second panel', type: 'timeseries' },
           ],
         })
       );
@@ -195,7 +254,7 @@ describe('AnnotationsField', function () {
         mockDashboardDto({
           title: 'My other dashboard',
           uid: 'dash-other-uid',
-          panels: [{ id: 3, title: 'Third panel' }],
+          panels: [{ id: 3, title: 'Third panel', type: 'timeseries' }],
         })
       );
 
@@ -216,10 +275,12 @@ describe('AnnotationsField', function () {
       expect(annotationValueElements[0]).toHaveTextContent('dash-test-uid');
       expect(annotationValueElements[1]).toHaveTextContent('1');
 
+      const { confirmButton, dialog } = ui.dashboardPicker;
+
       await user.click(ui.setDashboardButton.get());
-      await user.click(await findByTitle(ui.dashboardPicker.dialog.get(), 'My other dashboard'));
-      await user.click(await findByText(ui.dashboardPicker.dialog.get(), 'Third panel'));
-      await user.click(ui.dashboardPicker.confirmButton.get());
+      await user.click(await findByRole(dialog.get(), 'button', { name: /My other dashboard/ }));
+      await user.click(await findByRole(dialog.get(), 'button', { name: /Third panel/ }));
+      await user.click(confirmButton.get());
 
       expect(ui.dashboardPicker.dialog.query()).not.toBeInTheDocument();
 
@@ -234,6 +295,36 @@ describe('AnnotationsField', function () {
 
       expect(annotationKeyElements[1]).toHaveTextContent('Panel ID');
       expect(annotationValueElements[1]).toHaveTextContent('3');
+    });
+
+    it('should render warning icon for panels of type other than graph and timeseries', async function () {
+      mockSearchApiResponse(server, [
+        mockDashboardSearchItem({ title: 'My dashboard', uid: 'dash-test-uid', type: DashboardSearchItemType.DashDB }),
+      ]);
+
+      mockGetDashboardResponse(
+        mockDashboardDto({
+          title: 'My dashboard',
+          uid: 'dash-test-uid',
+          panels: [
+            { id: 1, title: 'First panel', type: 'bar' },
+            { id: 2, title: 'Second panel', type: 'graph' },
+          ],
+        })
+      );
+
+      const user = userEvent.setup();
+
+      render(<FormWrapper formValues={{ annotations: [] }} />);
+
+      const { dialog } = ui.dashboardPicker;
+
+      await user.click(ui.setDashboardButton.get());
+      await user.click(await findByTitle(dialog.get(), 'My dashboard'));
+
+      const warnedPanel = await findByRole(dialog.get(), 'button', { name: /First panel/ });
+
+      expect(getByTestId(warnedPanel, 'warning-icon')).toBeInTheDocument();
     });
   });
 });

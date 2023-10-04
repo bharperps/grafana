@@ -18,6 +18,7 @@ import LogsQueryEditor from '../LogsQueryEditor';
 import NewMetricsQueryEditor from '../MetricsQueryEditor/MetricsQueryEditor';
 import { QueryHeader } from '../QueryHeader';
 import { Space } from '../Space';
+import TracesQueryEditor from '../TracesQueryEditor';
 
 import usePreparedQuery from './usePreparedQuery';
 
@@ -33,6 +34,7 @@ const QueryEditor = ({
   onChange,
   onRunQuery: baseOnRunQuery,
   data,
+  range,
 }: AzureMonitorQueryEditorProps) => {
   const [errorMessage, setError] = useLastError();
   const onRunQuery = useMemo(() => debounce(baseOnRunQuery, 500), [baseOnRunQuery]);
@@ -65,13 +67,14 @@ const QueryEditor = ({
         onChange={onQueryChange}
         variableOptionGroup={variableOptionGroup}
         setError={setError}
+        range={range}
       />
 
       {errorMessage && (
         <>
           <Space v={2} />
           <Alert severity="error" title="An error occurred while requesting metadata from Azure Monitor">
-            {errorMessage}
+            {errorMessage instanceof Error ? errorMessage.message : errorMessage}
           </Alert>
         </>
       )}
@@ -93,6 +96,7 @@ const EditorForQueryType = ({
   variableOptionGroup,
   onChange,
   setError,
+  range,
 }: EditorForQueryTypeProps) => {
   switch (query.queryType) {
     case AzureQueryType.AzureMonitor:
@@ -128,6 +132,19 @@ const EditorForQueryType = ({
           onChange={onChange}
           variableOptionGroup={variableOptionGroup}
           setError={setError}
+        />
+      );
+
+    case AzureQueryType.AzureTraces:
+      return (
+        <TracesQueryEditor
+          subscriptionId={subscriptionId}
+          query={query}
+          datasource={datasource}
+          onChange={onChange}
+          variableOptionGroup={variableOptionGroup}
+          setError={setError}
+          range={range}
         />
       );
 

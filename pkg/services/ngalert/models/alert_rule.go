@@ -136,6 +136,50 @@ type AlertRuleGroup struct {
 	Rules      []AlertRule
 }
 
+// AlertRuleGroupWithFolderTitle extends AlertRuleGroup with orgID and folder title
+type AlertRuleGroupWithFolderTitle struct {
+	*AlertRuleGroup
+	OrgID       int64
+	FolderTitle string
+}
+
+func NewAlertRuleGroupWithFolderTitle(groupKey AlertRuleGroupKey, rules []AlertRule, folderTitle string) AlertRuleGroupWithFolderTitle {
+	SortAlertRulesByGroupIndex(rules)
+	var interval int64
+	if len(rules) > 0 {
+		interval = rules[0].IntervalSeconds
+	}
+	var result = AlertRuleGroupWithFolderTitle{
+		AlertRuleGroup: &AlertRuleGroup{
+			Title:     groupKey.RuleGroup,
+			FolderUID: groupKey.NamespaceUID,
+			Interval:  interval,
+			Rules:     rules,
+		},
+		FolderTitle: folderTitle,
+		OrgID:       groupKey.OrgID,
+	}
+	return result
+}
+
+func NewAlertRuleGroupWithFolderTitleFromRulesGroup(groupKey AlertRuleGroupKey, rules RulesGroup, folderTitle string) AlertRuleGroupWithFolderTitle {
+	derefRules := make([]AlertRule, 0, len(rules))
+	for _, rule := range rules {
+		derefRules = append(derefRules, *rule)
+	}
+	return NewAlertRuleGroupWithFolderTitle(groupKey, derefRules, folderTitle)
+}
+
+// SortAlertRuleGroupWithFolderTitle sorts AlertRuleGroupWithFolderTitle by folder UID and group name
+func SortAlertRuleGroupWithFolderTitle(g []AlertRuleGroupWithFolderTitle) {
+	sort.SliceStable(g, func(i, j int) bool {
+		if g[i].AlertRuleGroup.FolderUID == g[j].AlertRuleGroup.FolderUID {
+			return g[i].AlertRuleGroup.Title < g[j].AlertRuleGroup.Title
+		}
+		return g[i].AlertRuleGroup.FolderUID < g[j].AlertRuleGroup.FolderUID
+	})
+}
+
 // AlertRule is the model for alert rules in unified alerting.
 type AlertRule struct {
 	ID              int64 `xorm:"pk autoincr 'id'"`
@@ -172,6 +216,37 @@ type AlertRuleWithOptionals struct {
 	// DB in case it was not sent.
 	HasPause bool
 }
+
+// AlertsRulesBy is a function that defines the ordering of alert rules.
+type AlertRulesBy func(a1, a2 *AlertRule) bool
+
+func (by AlertRulesBy) Sort(rules []*AlertRule) {
+	sort.Sort(AlertRulesSorter{rules: rules, by: by})
+}
+
+// AlertRulesByIndex orders alert rules by rule group index. You should
+// make sure that all alert rules belong to the same rule group (have the
+// same RuleGroupKey) before using this ordering.
+func AlertRulesByIndex(a1, a2 *AlertRule) bool {
+	return a1.RuleGroupIndex < a2.RuleGroupIndex
+}
+
+func AlertRulesByGroupKeyAndIndex(a1, a2 *AlertRule) bool {
+	k1, k2 := a1.GetGroupKey(), a2.GetGroupKey()
+	if k1 == k2 {
+		return a1.RuleGroupIndex < a2.RuleGroupIndex
+	}
+	return AlertRuleGroupKeyByNamespaceAndRuleGroup(&k1, &k2)
+}
+
+type AlertRulesSorter struct {
+	rules []*AlertRule
+	by    AlertRulesBy
+}
+
+func (s AlertRulesSorter) Len() int           { return len(s.rules) }
+func (s AlertRulesSorter) Swap(i, j int)      { s.rules[i], s.rules[j] = s.rules[j], s.rules[i] }
+func (s AlertRulesSorter) Less(i, j int) bool { return s.by(s.rules[i], s.rules[j]) }
 
 // GetDashboardUID returns the DashboardUID or "".
 func (alertRule *AlertRule) GetDashboardUID() string {
@@ -267,8 +342,8 @@ type AlertRuleKey struct {
 	UID   string `xorm:"uid"`
 }
 
-func (k AlertRuleKey) LogContext() []interface{} {
-	return []interface{}{"rule_uid", k.UID, "org_id", k.OrgID}
+func (k AlertRuleKey) LogContext() []any {
+	return []any{"rule_uid", k.UID, "org_id", k.OrgID}
 }
 
 type AlertRuleKeyWithVersion struct {
@@ -295,6 +370,29 @@ func (k AlertRuleGroupKey) String() string {
 func (k AlertRuleKey) String() string {
 	return fmt.Sprintf("{orgID: %d, UID: %s}", k.OrgID, k.UID)
 }
+
+// AlertRuleGroupKeyBy is a function that defines the ordering of alert rule group keys.
+type AlertRuleGroupKeyBy func(a1, a2 *AlertRuleGroupKey) bool
+
+func (by AlertRuleGroupKeyBy) Sort(keys []AlertRuleGroupKey) {
+	sort.Sort(AlertRuleGroupKeySorter{keys: keys, by: by})
+}
+
+func AlertRuleGroupKeyByNamespaceAndRuleGroup(k1, k2 *AlertRuleGroupKey) bool {
+	if k1.NamespaceUID == k2.NamespaceUID {
+		return k1.RuleGroup < k2.RuleGroup
+	}
+	return k1.NamespaceUID < k2.NamespaceUID
+}
+
+type AlertRuleGroupKeySorter struct {
+	keys []AlertRuleGroupKey
+	by   AlertRuleGroupKeyBy
+}
+
+func (s AlertRuleGroupKeySorter) Len() int           { return len(s.keys) }
+func (s AlertRuleGroupKeySorter) Swap(i, j int)      { s.keys[i], s.keys[j] = s.keys[j], s.keys[i] }
+func (s AlertRuleGroupKeySorter) Less(i, j int) bool { return s.by(&s.keys[i], &s.keys[j]) }
 
 // GetKey returns the alert definitions identifier
 func (alertRule *AlertRule) GetKey() AlertRuleKey {
@@ -362,16 +460,12 @@ type AlertRuleVersion struct {
 type GetAlertRuleByUIDQuery struct {
 	UID   string
 	OrgID int64
-
-	Result *AlertRule
 }
 
 // GetAlertRulesGroupByRuleUIDQuery is the query for retrieving a group of alerts by UID of a rule that belongs to that group
 type GetAlertRulesGroupByRuleUIDQuery struct {
 	UID   string
 	OrgID int64
-
-	Result []*AlertRule
 }
 
 // ListAlertRulesQuery is the query for listing alert rules
@@ -385,8 +479,6 @@ type ListAlertRulesQuery struct {
 	// to return just those for a dashboard and panel.
 	DashboardUID string
 	PanelID      int64
-
-	Result RulesGroup
 }
 
 // CountAlertRulesQuery is the query for counting alert rules
@@ -397,6 +489,7 @@ type CountAlertRulesQuery struct {
 
 type GetAlertRulesForSchedulingQuery struct {
 	PopulateFolders bool
+	RuleGroups      []string
 
 	ResultRules         []*AlertRule
 	ResultFoldersTitles map[string]string
@@ -407,8 +500,6 @@ type ListNamespaceAlertRulesQuery struct {
 	OrgID int64
 	// Namespace is the folder slug
 	NamespaceUID string
-
-	Result []*AlertRule
 }
 
 // ListOrgRuleGroupsQuery is the query for listing unique rule groups
@@ -421,8 +512,6 @@ type ListOrgRuleGroupsQuery struct {
 	// to return just those for a dashboard and panel.
 	DashboardUID string
 	PanelID      int64
-
-	Result [][]string
 }
 
 type UpdateRule struct {
@@ -504,6 +593,15 @@ func (g RulesGroup) SortByGroupIndex() {
 	})
 }
 
+func SortAlertRulesByGroupIndex(rules []AlertRule) {
+	sort.Slice(rules, func(i, j int) bool {
+		if rules[i].RuleGroupIndex == rules[j].RuleGroupIndex {
+			return rules[i].ID < rules[j].ID
+		}
+		return rules[i].RuleGroupIndex < rules[j].RuleGroupIndex
+	})
+}
+
 const (
 	QuotaTargetSrv quota.TargetSrv = "ngalert"
 	QuotaTarget    quota.Target    = "alert_rule"
@@ -518,4 +616,16 @@ func WithRuleKey(ctx context.Context, ruleKey AlertRuleKey) context.Context {
 func RuleKeyFromContext(ctx context.Context) (AlertRuleKey, bool) {
 	key, ok := ctx.Value(ruleKeyContextKey{}).(AlertRuleKey)
 	return key, ok
+}
+
+// GroupByAlertRuleGroupKey groups all rules by AlertRuleGroupKey. Returns map of RulesGroup sorted by AlertRule.RuleGroupIndex
+func GroupByAlertRuleGroupKey(rules []*AlertRule) map[AlertRuleGroupKey]RulesGroup {
+	result := make(map[AlertRuleGroupKey]RulesGroup)
+	for _, rule := range rules {
+		result[rule.GetGroupKey()] = append(result[rule.GetGroupKey()], rule)
+	}
+	for _, group := range result {
+		group.SortByGroupIndex()
+	}
+	return result
 }

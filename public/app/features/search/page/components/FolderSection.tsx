@@ -1,17 +1,15 @@
 import { css } from '@emotion/css';
-import React, { useCallback } from 'react';
-import { useAsync, useLocalStorage } from 'react-use';
+import React, { useCallback, useId, useState } from 'react';
+import { useAsync } from 'react-use';
 
 import { GrafanaTheme2, toIconName } from '@grafana/data';
 import { selectors } from '@grafana/e2e-selectors';
 import { Card, Checkbox, CollapsableSection, Icon, Spinner, useStyles2 } from '@grafana/ui';
 import { config } from 'app/core/config';
 import { t } from 'app/core/internationalization';
-import { getSectionStorageKey } from 'app/features/search/utils';
-import { useUniqueId } from 'app/plugins/datasource/influxdb/components/useUniqueId';
 
 import { SearchItem } from '../..';
-import { GENERAL_FOLDER_UID } from '../../constants';
+import { GENERAL_FOLDER_UID, SEARCH_EXPANDED_FOLDER_STORAGE_KEY } from '../../constants';
 import { getGrafanaSearcher } from '../../service';
 import { getFolderChildren } from '../../service/folders';
 import { queryResultToViewItem } from '../../service/utils';
@@ -58,9 +56,14 @@ export const FolderSection = ({
   renderStandaloneBody,
   tags,
 }: SectionHeaderProps) => {
+  const uid = section.uid;
   const editable = selectionToggle != null;
+
   const styles = useStyles2(useCallback((theme: GrafanaTheme2) => getSectionHeaderStyles(theme, editable), [editable]));
-  const [sectionExpanded, setSectionExpanded] = useLocalStorage(getSectionStorageKey(section.title), false);
+  const [sectionExpanded, setSectionExpanded] = useState(() => {
+    const lastExpandedFolder = window.localStorage.getItem(SEARCH_EXPANDED_FOLDER_STORAGE_KEY);
+    return lastExpandedFolder === uid;
+  });
 
   const results = useAsync(async () => {
     if (!sectionExpanded && !renderStandaloneBody) {
@@ -73,7 +76,20 @@ export const FolderSection = ({
   }, [sectionExpanded, tags]);
 
   const onSectionExpand = () => {
-    setSectionExpanded(!sectionExpanded);
+    const newExpandedValue = !sectionExpanded;
+
+    if (newExpandedValue) {
+      // If we've just expanded the section, remember it to local storage
+      window.localStorage.setItem(SEARCH_EXPANDED_FOLDER_STORAGE_KEY, uid);
+    } else {
+      // Else, when closing a section, remove it from local storage only if this folder was the most recently opened
+      const lastExpandedFolder = window.localStorage.getItem(SEARCH_EXPANDED_FOLDER_STORAGE_KEY);
+      if (lastExpandedFolder === uid) {
+        window.localStorage.removeItem(SEARCH_EXPANDED_FOLDER_STORAGE_KEY);
+      }
+    }
+
+    setSectionExpanded(newExpandedValue);
   };
 
   const onToggleFolder = (evt: React.FormEvent) => {
@@ -91,7 +107,7 @@ export const FolderSection = ({
     }
   };
 
-  const id = useUniqueId();
+  const id = useId();
   const labelId = `section-header-label-${id}`;
 
   let icon = toIconName(section.icon ?? '');
@@ -147,8 +163,11 @@ export const FolderSection = ({
       label={
         <>
           {selectionToggle && selection && (
+            // TODO: fix keyboard a11y
+            // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
             <div onClick={onToggleFolder}>
               <Checkbox
+                className={styles.checkbox}
                 value={selection(section.kind, section.uid)}
                 aria-label={t('search.folder-view.select-folder', 'Select folder')}
               />
@@ -232,5 +251,8 @@ const getSectionHeaderStyles = (theme: GrafanaTheme2, editable: boolean) => {
       place-content: center;
       padding-bottom: 1rem;
     `,
+    checkbox: css({
+      marginRight: theme.spacing(1),
+    }),
   };
 };

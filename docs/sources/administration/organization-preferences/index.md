@@ -6,6 +6,10 @@ aliases:
   - preferences/change-grafana-theme/
   - preferences/change-grafana-timezone/
   - preferences/change-home-dashboard/
+labels:
+  products:
+    - enterprise
+    - oss
 title: Organization preferences
 weight: 500
 ---
@@ -39,8 +43,8 @@ Grafana server administrators and organization administrators can change organiz
 
 Follow these instructions if you are a Grafana Server Admin.
 
-1. Hover your cursor over the **Server Admin** (shield) icon until a menu appears.
-1. Click **Orgs**.
+1. Click **Administration** in the left-side menu.
+1. Click **Organizations**.
 1. In the organization list, click the name of the organization that you want to change.
 1. In **Name**, enter the new organization name.
 1. Click **Update**.
@@ -194,7 +198,9 @@ Users with the Grafana Server Admin flag on their account or access to the confi
 default_home_dashboard_path = data/main-dashboard.json
 ```
 
-> **Note:** On Linux, Grafana uses `/usr/share/grafana/public/dashboards/home.json` as the default home dashboard location.
+{{% admonition type="note" %}}
+On Linux, Grafana uses `/usr/share/grafana/public/dashboards/home.json` as the default home dashboard location.
+{{% /admonition %}}
 
 ### Set the home dashboard for your organization
 

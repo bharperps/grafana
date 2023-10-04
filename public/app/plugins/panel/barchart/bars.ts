@@ -445,12 +445,11 @@ export function getConfig(opts: BarsOptions, theme: GrafanaTheme2) {
   const init = (u: uPlot) => {
     let over = u.over;
     over.style.overflow = 'hidden';
-    u.root.querySelectorAll('.u-cursor-pt').forEach((el) => {
-      if (el instanceof HTMLElement) {
-        el.style.borderRadius = '0';
-        if (opts.fullHighlight) {
-          el.style.zIndex = '-1';
-        }
+    u.root.querySelectorAll<HTMLDivElement>('.u-cursor-pt').forEach((el) => {
+      el.style.borderRadius = '0';
+
+      if (opts.fullHighlight) {
+        el.style.zIndex = '-1';
       }
     });
   };
@@ -494,11 +493,14 @@ export function getConfig(opts: BarsOptions, theme: GrafanaTheme2) {
         let widthReduce = 0;
 
         // get height of bar rect at same index of the series below the hovered one
-        if (isStacked && isHovered && hRect!.sidx > 1) {
-          if (isXHorizontal) {
-            heightReduce = findRect(qt, hRect!.sidx - 1, hRect!.didx)!.h;
-          } else {
-            widthReduce = findRect(qt, hRect!.sidx - 1, hRect!.didx)!.w;
+        if (isStacked && isHovered) {
+          const rect = hRect && hRect.sidx > 1 && findRect(qt, hRect.sidx - 1, hRect.didx);
+          if (rect) {
+            if (isXHorizontal) {
+              heightReduce = rect.h;
+            } else {
+              widthReduce = rect.w;
+            }
           }
         }
 

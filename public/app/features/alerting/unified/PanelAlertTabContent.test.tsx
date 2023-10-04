@@ -184,11 +184,8 @@ describe('PanelAlertTabContent', () => {
     const dsService = new MockDataSourceSrv(dataSources);
     dsService.datasources[dataSources.prometheus.uid] = new PrometheusDatasource(
       dataSources.prometheus
-    ) as DataSourceApi<any, any>;
-    dsService.datasources[dataSources.default.uid] = new PrometheusDatasource(dataSources.default) as DataSourceApi<
-      any,
-      any
-    >;
+    ) as DataSourceApi;
+    dsService.datasources[dataSources.default.uid] = new PrometheusDatasource(dataSources.default) as DataSourceApi;
     setDataSourceSrv(dsService);
     disableRBAC();
   });
@@ -319,10 +316,17 @@ describe('PanelAlertTabContent', () => {
         panelId: panel.id,
       }
     );
-    expect(mocks.api.fetchRules).toHaveBeenCalledWith(GRAFANA_RULES_SOURCE_NAME, {
-      dashboardUID: dashboard.uid,
-      panelId: panel.id,
-    });
+    expect(mocks.api.fetchRules).toHaveBeenCalledWith(
+      GRAFANA_RULES_SOURCE_NAME,
+      {
+        dashboardUID: dashboard.uid,
+        panelId: panel.id,
+      },
+      undefined,
+      undefined,
+      undefined,
+      undefined
+    );
   });
 
   it('Update NewRuleFromPanel button url when template changes', async () => {

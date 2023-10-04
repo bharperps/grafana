@@ -7,18 +7,16 @@ import { getDataSourceSrv } from '@grafana/runtime';
 import { DataQuery, LoadingState } from '@grafana/schema';
 import { useStyles2 } from '@grafana/ui';
 import { getTimeSrv } from 'app/features/dashboard/services/TimeSrv';
-import { isExpressionQuery } from 'app/features/expressions/guards';
 import { AlertQuery } from 'app/types/unified-alerting-dto';
 
-import { TABLE, TIMESERIES } from '../../utils/constants';
-import { SupportedPanelPlugins } from '../PanelPluginsButtonGroup';
+import { isPromOrLokiQuery } from '../../utils/rule-form';
 
 import { VizWrapper } from './VizWrapper';
 
 export interface RecordingRuleEditorProps {
   queries: AlertQuery[];
   onChangeQuery: (updatedQueries: AlertQuery[]) => void;
-  runQueries: (queries: AlertQuery[]) => void;
+  runQueries: () => void;
   panelData: Record<string, PanelData>;
   dataSourceName: string;
 }
@@ -38,10 +36,6 @@ export const RecordingRuleEditor: FC<RecordingRuleEditorProps> = ({
 
   const styles = useStyles2(getStyles);
 
-  const isExpression = isExpressionQuery(queries[0]?.model);
-
-  const [pluginId, changePluginId] = useState<SupportedPanelPlugins>(isExpression ? TABLE : TIMESERIES);
-
   useEffect(() => {
     setData(panelData?.[queries[0]?.refId]);
   }, [panelData, queries]);
@@ -56,18 +50,27 @@ export const RecordingRuleEditor: FC<RecordingRuleEditorProps> = ({
 
   const handleChangedQuery = (changedQuery: DataQuery) => {
     const query = queries[0];
+    const dataSourceId = getDataSourceSrv().getInstanceSettings(dataSourceName)?.uid;
+
+    if (!isPromOrLokiQuery(changedQuery) || !dataSourceId) {
+      return;
+    }
+
+    const expr = changedQuery.expr;
 
     const merged = {
       ...query,
-      refId: changedQuery.refId,
-      queryType: query.model.queryType ?? '',
-      //@ts-ignore
-      expr: changedQuery?.expr,
+      ...changedQuery,
+      datasourceUid: dataSourceId,
+      expr,
       model: {
+        expr,
+        datasource: changedQuery.datasource,
         refId: changedQuery.refId,
-        //@ts-ignore
-        expr: changedQuery?.expr,
-        editorMode: 'code',
+        editorMode: changedQuery.editorMode,
+        instant: Boolean(changedQuery.instant),
+        range: Boolean(changedQuery.range),
+        legendFormat: changedQuery.legendFormat,
       },
     };
     onChangeQuery([merged]);
@@ -94,14 +97,14 @@ export const RecordingRuleEditor: FC<RecordingRuleEditorProps> = ({
           queries={queries}
           app={CoreApp.UnifiedAlerting}
           onChange={handleChangedQuery}
-          onRunQuery={() => runQueries(queries)}
+          onRunQuery={runQueries}
           datasource={dataSource}
         />
       )}
 
       {data && (
         <div className={styles.vizWrapper}>
-          <VizWrapper data={data} currentPanel={pluginId} changePanel={changePluginId} />
+          <VizWrapper data={data} />
         </div>
       )}
     </>

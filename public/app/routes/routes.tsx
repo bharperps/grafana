@@ -1,14 +1,18 @@
 import React from 'react';
-import { Redirect } from 'react-router-dom';
+import { Redirect, RouteComponentProps } from 'react-router-dom';
 
-import { NavLandingPage } from 'app/core/components/AppChrome/NavLandingPage';
-import ErrorPage from 'app/core/components/ErrorPage/ErrorPage';
+import { isTruthy } from '@grafana/data';
 import { LoginPage } from 'app/core/components/Login/LoginPage';
+import { NavLandingPage } from 'app/core/components/NavLandingPage/NavLandingPage';
+import { PageNotFound } from 'app/core/components/PageNotFound/PageNotFound';
 import config from 'app/core/config';
 import { contextSrv } from 'app/core/services/context_srv';
 import UserAdminPage from 'app/features/admin/UserAdminPage';
 import LdapPage from 'app/features/admin/ldap/LdapPage';
 import { getAlertingRoutes } from 'app/features/alerting/routes';
+import { newBrowseDashboardsEnabled } from 'app/features/browse-dashboards/featureFlag';
+import { ConnectionsRedirectNotice } from 'app/features/connections/components/ConnectionsRedirectNotice';
+import { ROUTES as CONNECTIONS_ROUTES } from 'app/features/connections/constants';
 import { getRoutes as getDataConnectionsRoutes } from 'app/features/connections/routes';
 import { DATASOURCES_ROUTES } from 'app/features/datasources/constants';
 import { getRoutes as getPluginCatalogRoutes } from 'app/features/plugins/admin/routes';
@@ -18,40 +22,11 @@ import { AccessControlAction, DashboardRoutes } from 'app/types';
 
 import { SafeDynamicImport } from '../core/components/DynamicImports/SafeDynamicImport';
 import { RouteDescriptor } from '../core/navigation/types';
-import { getPublicDashboardRoutes } from '../features/dashboard/routes';
+import { getEmbeddedDashboardRoutes, getPublicDashboardRoutes } from '../features/dashboard/routes';
 
 export const extraRoutes: RouteDescriptor[] = [];
 
 export function getAppRoutes(): RouteDescriptor[] {
-  const topnavRoutes: RouteDescriptor[] = config.featureToggles.topnav
-    ? [
-        {
-          path: '/apps',
-          component: () => <NavLandingPage navId="apps" />,
-        },
-        {
-          path: '/alerts-and-incidents',
-          component: () => <NavLandingPage navId="alerts-and-incidents" />,
-        },
-        {
-          path: '/monitoring',
-          component: () => <NavLandingPage navId="monitoring" />,
-        },
-        {
-          path: '/admin/general',
-          component: () => <NavLandingPage navId="admin/general" />,
-        },
-        {
-          path: '/admin/plugins',
-          component: () => <NavLandingPage navId="admin/plugins" />,
-        },
-        {
-          path: '/admin/access',
-          component: () => <NavLandingPage navId="admin/access" />,
-        },
-      ]
-    : [];
-
   return [
     // Based on the Grafana configuration standalone plugin pages can even override and extend existing core pages, or they can register new routes under existing ones.
     // In order to make it possible we need to register them first due to how `<Switch>` is evaluating routes. (This will be unnecessary once/when we upgrade to React Router v6 and start using `<Routes>` instead.)
@@ -74,16 +49,16 @@ export function getAppRoutes(): RouteDescriptor[] {
     },
     {
       path: '/dashboard/new',
-      roles: () => contextSrv.evaluatePermission(() => ['Editor', 'Admin'], [AccessControlAction.DashboardsCreate]),
+      roles: () => contextSrv.evaluatePermission([AccessControlAction.DashboardsCreate]),
       pageClass: 'page-dashboard',
       routeName: DashboardRoutes.New,
       component: SafeDynamicImport(
-        () => import(/* webpackChunkName: "DashboardPage" */ '../features/dashboard/containers/NewDashboardPage')
+        () => import(/* webpackChunkName: "DashboardPage" */ '../features/dashboard/containers/DashboardPage')
       ),
     },
     {
       path: '/dashboard/new-with-ds/:datasourceUid',
-      roles: () => contextSrv.evaluatePermission(() => ['Editor', 'Admin'], [AccessControlAction.DashboardsCreate]),
+      roles: () => contextSrv.evaluatePermission([AccessControlAction.DashboardsCreate]),
       component: SafeDynamicImport(
         () => import(/* webpackChunkName: "DashboardPage" */ '../features/dashboard/containers/NewDashboardWithDS')
       ),
@@ -126,37 +101,30 @@ export function getAppRoutes(): RouteDescriptor[] {
     },
     {
       path: '/dashboard/import',
-      roles: () => contextSrv.evaluatePermission(() => ['Editor', 'Admin'], [AccessControlAction.DashboardsCreate]),
+      roles: () => contextSrv.evaluatePermission([AccessControlAction.DashboardsCreate]),
       component: SafeDynamicImport(
         () => import(/* webpackChunkName: "DashboardImport"*/ 'app/features/manage-dashboards/DashboardImportPage')
       ),
     },
     {
       path: DATASOURCES_ROUTES.List,
-      component: SafeDynamicImport(
-        () => import(/* webpackChunkName: "DataSourcesListPage"*/ 'app/features/datasources/pages/DataSourcesListPage')
-      ),
+      component: () => <Redirect to={CONNECTIONS_ROUTES.DataSources} />,
     },
     {
       path: DATASOURCES_ROUTES.Edit,
-      component: SafeDynamicImport(
-        () => import(/* webpackChunkName: "EditDataSourcePage"*/ '../features/datasources/pages/EditDataSourcePage')
+      component: (props: RouteComponentProps<{ uid: string }>) => (
+        <Redirect to={CONNECTIONS_ROUTES.DataSourcesEdit.replace(':uid', props.match.params.uid)} />
       ),
     },
     {
       path: DATASOURCES_ROUTES.Dashboards,
-      component: SafeDynamicImport(
-        () =>
-          import(
-            /* webpackChunkName: "DataSourceDashboards"*/ 'app/features/datasources/pages/DataSourceDashboardsPage'
-          )
+      component: (props: RouteComponentProps<{ uid: string }>) => (
+        <Redirect to={CONNECTIONS_ROUTES.DataSourcesDashboards.replace(':uid', props.match.params.uid)} />
       ),
     },
     {
       path: DATASOURCES_ROUTES.New,
-      component: SafeDynamicImport(
-        () => import(/* webpackChunkName: "NewDataSourcePage"*/ '../features/datasources/pages/NewDataSourcePage')
-      ),
+      component: () => <Redirect to={CONNECTIONS_ROUTES.DataSourcesNew} />,
     },
     {
       path: '/datasources/correlations',
@@ -176,23 +144,18 @@ export function getAppRoutes(): RouteDescriptor[] {
     },
     {
       path: '/dashboards/folder/new',
-      roles: () => contextSrv.evaluatePermission(() => ['Editor', 'Admin'], [AccessControlAction.FoldersCreate]),
+      roles: () => contextSrv.evaluatePermission([AccessControlAction.FoldersCreate]),
       component: SafeDynamicImport(
         () => import(/* webpackChunkName: "NewDashboardsFolder"*/ 'app/features/folders/components/NewDashboardsFolder')
       ),
     },
-    {
+    !newBrowseDashboardsEnabled() && {
       path: '/dashboards/f/:uid/:slug/permissions',
-      component: config.rbacEnabled
-        ? SafeDynamicImport(
-            () =>
-              import(/* webpackChunkName: "FolderPermissions"*/ 'app/features/folders/AccessControlFolderPermissions')
-          )
-        : SafeDynamicImport(
-            () => import(/* webpackChunkName: "FolderPermissions"*/ 'app/features/folders/FolderPermissions')
-          ),
+      component: SafeDynamicImport(
+        () => import(/* webpackChunkName: "FolderPermissions"*/ 'app/features/folders/AccessControlFolderPermissions')
+      ),
     },
-    {
+    !newBrowseDashboardsEnabled() && {
       path: '/dashboards/f/:uid/:slug/settings',
       component: SafeDynamicImport(
         () => import(/* webpackChunkName: "FolderSettingsPage"*/ 'app/features/folders/FolderSettingsPage')
@@ -213,18 +176,37 @@ export function getAppRoutes(): RouteDescriptor[] {
     {
       path: '/explore',
       pageClass: 'page-explore',
-      roles: () =>
-        contextSrv.evaluatePermission(
-          () => (config.viewersCanEdit ? [] : ['Editor', 'Admin']),
-          [AccessControlAction.DataSourcesExplore]
-        ),
+      roles: () => contextSrv.evaluatePermission([AccessControlAction.DataSourcesExplore]),
       component: SafeDynamicImport(() =>
         config.exploreEnabled
-          ? import(/* webpackChunkName: "explore" */ 'app/features/explore/EmptyStateWrapper')
+          ? import(/* webpackChunkName: "explore" */ 'app/features/explore/ExplorePage')
           : import(/* webpackChunkName: "explore-feature-toggle-page" */ 'app/features/explore/FeatureTogglePage')
       ),
     },
-    ...topnavRoutes,
+    {
+      path: '/apps',
+      component: () => <NavLandingPage navId="apps" />,
+    },
+    {
+      path: '/alerts-and-incidents',
+      component: () => <NavLandingPage navId="alerts-and-incidents" />,
+    },
+    {
+      path: '/monitoring',
+      component: () => <NavLandingPage navId="monitoring" />,
+    },
+    {
+      path: '/admin/general',
+      component: () => <NavLandingPage navId="admin/general" />,
+    },
+    {
+      path: '/admin/plugins',
+      component: () => <NavLandingPage navId="admin/plugins" />,
+    },
+    {
+      path: '/admin/access',
+      component: () => <NavLandingPage navId="admin/access" />,
+    },
     {
       path: '/org',
       component: SafeDynamicImport(
@@ -249,7 +231,7 @@ export function getAppRoutes(): RouteDescriptor[] {
     },
     {
       path: '/org/apikeys',
-      roles: () => contextSrv.evaluatePermission(() => ['Admin'], [AccessControlAction.ActionAPIKeysRead]),
+      roles: () => contextSrv.evaluatePermission([AccessControlAction.ActionAPIKeysRead]),
       component: SafeDynamicImport(
         () => import(/* webpackChunkName: "ApiKeysPage" */ 'app/features/api-keys/ApiKeysPage')
       ),
@@ -257,10 +239,10 @@ export function getAppRoutes(): RouteDescriptor[] {
     {
       path: '/org/serviceaccounts',
       roles: () =>
-        contextSrv.evaluatePermission(
-          () => ['Admin'],
-          [AccessControlAction.ServiceAccountsRead, AccessControlAction.ServiceAccountsCreate]
-        ),
+        contextSrv.evaluatePermission([
+          AccessControlAction.ServiceAccountsRead,
+          AccessControlAction.ServiceAccountsCreate,
+        ]),
       component: SafeDynamicImport(
         () =>
           import(/* webpackChunkName: "ServiceAccountsPage" */ 'app/features/serviceaccounts/ServiceAccountsListPage')
@@ -284,44 +266,42 @@ export function getAppRoutes(): RouteDescriptor[] {
     {
       path: '/org/teams',
       roles: () =>
-        contextSrv.evaluatePermission(
-          () => (config.editorsCanAdmin ? ['Editor', 'Admin'] : ['Admin']),
-          [AccessControlAction.ActionTeamsRead, AccessControlAction.ActionTeamsCreate]
-        ),
+        contextSrv.evaluatePermission([AccessControlAction.ActionTeamsRead, AccessControlAction.ActionTeamsCreate]),
       component: SafeDynamicImport(() => import(/* webpackChunkName: "TeamList" */ 'app/features/teams/TeamList')),
     },
     {
       path: '/org/teams/new',
-      roles: () =>
-        contextSrv.evaluatePermission(
-          () => (config.editorsCanAdmin ? ['Editor', 'Admin'] : ['Admin']),
-          [AccessControlAction.ActionTeamsCreate]
-        ),
+      roles: () => contextSrv.evaluatePermission([AccessControlAction.ActionTeamsCreate]),
       component: SafeDynamicImport(() => import(/* webpackChunkName: "CreateTeam" */ 'app/features/teams/CreateTeam')),
     },
     {
       path: '/org/teams/edit/:id/:page?',
       roles: () =>
-        contextSrv.evaluatePermission(
-          () => (config.editorsCanAdmin ? ['Editor', 'Admin'] : ['Admin']),
-          [AccessControlAction.ActionTeamsRead, AccessControlAction.ActionTeamsCreate]
-        ),
+        contextSrv.evaluatePermission([AccessControlAction.ActionTeamsRead, AccessControlAction.ActionTeamsCreate]),
       component: SafeDynamicImport(() => import(/* webpackChunkName: "TeamPages" */ 'app/features/teams/TeamPages')),
     },
     // ADMIN
     {
       path: '/admin',
-      component: () => (config.featureToggles.topnav ? <NavLandingPage navId="cfg" /> : <Redirect to="/admin/users" />),
+      component: () => <NavLandingPage navId="cfg" header={<ConnectionsRedirectNotice />} />,
+    },
+    {
+      path: '/admin/authentication',
+      roles: () => contextSrv.evaluatePermission([AccessControlAction.SettingsWrite]),
+      component:
+        config.licenseInfo.enabledFeatures?.saml || config.ldapEnabled
+          ? SafeDynamicImport(
+              () => import(/* webpackChunkName: "AdminAuthentication" */ 'app/features/auth-config/AuthConfigPage')
+            )
+          : () => <Redirect to="/admin" />,
     },
     {
       path: '/admin/access',
-      component: () =>
-        config.featureToggles.topnav ? <NavLandingPage navId="admin/access" /> : <Redirect to="/admin/users" />,
+      component: () => <NavLandingPage navId="admin/access" />,
     },
     {
       path: '/admin/config',
-      component: () =>
-        config.featureToggles.topnav ? <NavLandingPage navId="admin/config" /> : <Redirect to="/admin/org" />,
+      component: () => <NavLandingPage navId="admin/config" />,
     },
     {
       path: '/admin/settings',
@@ -335,11 +315,9 @@ export function getAppRoutes(): RouteDescriptor[] {
     },
     {
       path: '/admin/users',
-      component: config.featureToggles.topnav
-        ? SafeDynamicImport(() => import(/* webpackChunkName: "UserListPage" */ 'app/features/admin/UserListPage'))
-        : SafeDynamicImport(
-            () => import(/* webpackChunkName: "UserListAdminPage" */ 'app/features/admin/UserListAdminPage')
-          ),
+      component: SafeDynamicImport(
+        () => import(/* webpackChunkName: "UserListPage" */ 'app/features/admin/UserListPage')
+      ),
     },
     {
       path: '/admin/users/create',
@@ -364,6 +342,14 @@ export function getAppRoutes(): RouteDescriptor[] {
       ),
     },
     {
+      path: '/admin/featuretoggles',
+      component: config.featureToggles.featureToggleAdminPage
+        ? SafeDynamicImport(
+            () => import(/* webpackChunkName: "AdminFeatureTogglesPage" */ 'app/features/admin/AdminFeatureTogglesPage')
+          )
+        : () => <Redirect to="/admin" />,
+    },
+    {
       path: '/admin/storage/:path*',
       roles: () => ['Admin'],
       component: SafeDynamicImport(
@@ -377,7 +363,7 @@ export function getAppRoutes(): RouteDescriptor[] {
       ),
     },
     {
-      path: '/admin/ldap',
+      path: '/admin/authentication/ldap',
       component: LdapPage,
     },
     // LOGIN / SIGNUP
@@ -476,15 +462,23 @@ export function getAppRoutes(): RouteDescriptor[] {
     {
       path: '/dashboards/f/:uid/:slug/library-panels',
       component: SafeDynamicImport(
-        () => import(/* webpackChunkName: "FolderLibraryPanelsPage"*/ 'app/features/folders/FolderLibraryPanelsPage')
+        newBrowseDashboardsEnabled()
+          ? () =>
+              import(
+                /* webpackChunkName: "FolderLibraryPanelsPage"*/ 'app/features/browse-dashboards/BrowseFolderLibraryPanelsPage'
+              )
+          : () =>
+              import(/* webpackChunkName: "FolderLibraryPanelsPage"*/ 'app/features/folders/FolderLibraryPanelsPage')
       ),
     },
     {
       path: '/dashboards/f/:uid/:slug/alerting',
-      roles: () =>
-        contextSrv.evaluatePermission(() => ['Viewer', 'Editor', 'Admin'], [AccessControlAction.AlertingRuleRead]),
+      roles: () => contextSrv.evaluatePermission([AccessControlAction.AlertingRuleRead]),
       component: SafeDynamicImport(
-        () => import(/* webpackChunkName: "FolderAlerting"*/ 'app/features/folders/FolderAlerting')
+        newBrowseDashboardsEnabled()
+          ? () =>
+              import(/* webpackChunkName: "FolderAlerting"*/ 'app/features/browse-dashboards/BrowseFolderAlertingPage')
+          : () => import(/* webpackChunkName: "FolderAlerting"*/ 'app/features/folders/FolderAlerting')
       ),
     },
     {
@@ -507,13 +501,12 @@ export function getAppRoutes(): RouteDescriptor[] {
     ...extraRoutes,
     ...getPublicDashboardRoutes(),
     ...getDataConnectionsRoutes(),
+    ...getEmbeddedDashboardRoutes(),
     {
       path: '/*',
-      component: ErrorPage,
+      component: PageNotFound,
     },
-    // TODO[Router]
-    // ...playlistRoutes,
-  ];
+  ].filter(isTruthy);
 }
 
 export function getSupportBundleRoutes(cfg = config): RouteDescriptor[] {
@@ -549,7 +542,13 @@ export function getDynamicDashboardRoutes(cfg = config): RouteDescriptor[] {
     {
       path: '/scenes/dashboard/:uid',
       component: SafeDynamicImport(
-        () => import(/* webpackChunkName: "scenes"*/ 'app/features/scenes/dashboard/DashboardScenePage')
+        () => import(/* webpackChunkName: "scenes"*/ 'app/features/dashboard-scene/pages/DashboardScenePage')
+      ),
+    },
+    {
+      path: '/scenes/dashboard/:uid/panel-edit/:panelId',
+      component: SafeDynamicImport(
+        () => import(/* webpackChunkName: "scenes"*/ 'app/features/dashboard-scene/pages/PanelEditPage')
       ),
     },
     {

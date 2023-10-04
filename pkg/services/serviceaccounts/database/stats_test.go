@@ -7,7 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	apikeygenprefix "github.com/grafana/grafana/pkg/components/apikeygenprefixed"
+	"github.com/grafana/grafana/pkg/components/satokengen"
+	"github.com/grafana/grafana/pkg/services/org"
 	"github.com/grafana/grafana/pkg/services/serviceaccounts"
 	"github.com/grafana/grafana/pkg/services/serviceaccounts/tests"
 )
@@ -20,7 +21,7 @@ func TestIntegrationStore_UsageStats(t *testing.T) {
 	db.Cfg.SATokenExpirationDayLimit = 4
 
 	keyName := t.Name()
-	key, err := apikeygenprefix.New(keyName)
+	key, err := satokengen.New(keyName)
 	require.NoError(t, err)
 
 	cmd := serviceaccounts.AddServiceAccountTokenCommand{
@@ -33,10 +34,18 @@ func TestIntegrationStore_UsageStats(t *testing.T) {
 	_, err = store.AddServiceAccountToken(context.Background(), sa.ID, &cmd)
 	require.NoError(t, err)
 
+	role := org.RoleNone
+	form := serviceaccounts.UpdateServiceAccountForm{
+		Role: &role,
+	}
+	_, err = store.UpdateServiceAccount(context.Background(), sa.OrgID, sa.ID, &form)
+	require.NoError(t, err)
+
 	stats, err := store.GetUsageMetrics(context.Background())
 	require.NoError(t, err)
 
 	assert.Equal(t, int64(1), stats.ServiceAccounts)
+	assert.Equal(t, int64(1), stats.ServiceAccountsWithNoRole)
 	assert.Equal(t, int64(1), stats.Tokens)
 	assert.Equal(t, true, stats.ForcedExpiryEnabled)
 }

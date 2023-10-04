@@ -1,4 +1,4 @@
-import { renderHook } from '@testing-library/react-hooks';
+import { renderHook } from '@testing-library/react';
 
 import { useLayout } from './layout';
 import { EdgeDatum, NodeDatum } from './types';
@@ -85,5 +85,7 @@ function makeEdge(source: number, target: number): EdgeDatum {
     mainStat: '',
     secondaryStat: '',
     dataFrameRowIndex: 0,
+    sourceNodeRadius: 40,
+    targetNodeRadius: 40,
   };
 }

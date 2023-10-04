@@ -4,7 +4,7 @@ import React from 'react';
 
 import { FetchError } from '@grafana/runtime';
 
-import { TraceqlFilter } from '../dataquery.gen';
+import { TraceqlFilter, TraceqlSearchScope } from '../dataquery.gen';
 import { TempoDatasource } from '../datasource';
 
 import SearchField from './SearchField';
@@ -48,12 +48,13 @@ describe('SearchField', () => {
     jest.useRealTimers();
   });
 
-  it('should not render tag if tag is present in field', () => {
+  it('should not render tag if hideTag is true', () => {
     const updateFilter = jest.fn((val) => {
       return val;
     });
-    const filter: TraceqlFilter = { id: 'test1', type: 'static', valueType: 'string', tag: 'test-tag' };
-    const { container } = renderSearchField(updateFilter, filter);
+    const filter: TraceqlFilter = { id: 'test1', valueType: 'string', tag: 'test-tag' };
+
+    const { container } = renderSearchField(updateFilter, filter, [], true);
 
     expect(container.querySelector(`input[aria-label="select test1 tag"]`)).not.toBeInTheDocument();
     expect(container.querySelector(`input[aria-label="select test1 operator"]`)).toBeInTheDocument();
@@ -64,7 +65,7 @@ describe('SearchField', () => {
     const updateFilter = jest.fn((val) => {
       return val;
     });
-    const filter: TraceqlFilter = { id: 'test1', operator: '=', type: 'static', valueType: 'string', tag: 'test-tag' };
+    const filter: TraceqlFilter = { id: 'test1', operator: '=', valueType: 'string', tag: 'test-tag' };
     const { container } = renderSearchField(updateFilter, filter);
 
     const select = await container.querySelector(`input[aria-label="select test1 operator"]`);
@@ -87,7 +88,6 @@ describe('SearchField', () => {
     const filter: TraceqlFilter = {
       id: 'test1',
       value: 'old',
-      type: 'static',
       valueType: 'string',
       tag: 'test-tag',
     };
@@ -112,8 +112,8 @@ describe('SearchField', () => {
       expect(updateFilter).toHaveBeenCalledWith({ ...filter, value: ['driver', 'customer'] });
 
       // Remove the first value
-      const firstValRemove = await screen.findByLabelText('Remove driver');
-      await user.click(firstValRemove);
+      const firstValRemove = await screen.findAllByLabelText('Remove');
+      await user.click(firstValRemove[0]);
       expect(updateFilter).toHaveBeenCalledWith({ ...filter, value: ['customer'] });
     }
   });
@@ -124,12 +124,11 @@ describe('SearchField', () => {
     });
     const filter: TraceqlFilter = {
       id: 'test1',
-      type: 'dynamic',
       valueType: 'string',
     };
     const { container } = renderSearchField(updateFilter, filter, ['tag1', 'tag22', 'tag33']);
 
-    const select = await container.querySelector(`input[aria-label="select test1 tag"]`);
+    const select = container.querySelector(`input[aria-label="select test1 tag"]`);
     expect(select).not.toBeNull();
     expect(select).toBeInTheDocument();
     if (select) {
@@ -153,18 +152,60 @@ describe('SearchField', () => {
       expect(updateFilter).toHaveBeenCalledWith({ ...filter, value: undefined });
     }
   });
+
+  it('should not provide intrinsic as a selectable scope', async () => {
+    const updateFilter = jest.fn((val) => {
+      return val;
+    });
+    const filter: TraceqlFilter = { id: 'test1', valueType: 'string', tag: 'test-tag' };
+
+    const { container } = renderSearchField(updateFilter, filter, [], true);
+
+    const scopeSelect = container.querySelector(`input[aria-label="select test1 scope"]`);
+    expect(scopeSelect).not.toBeNull();
+    expect(scopeSelect).toBeInTheDocument();
+
+    if (scopeSelect) {
+      await user.click(scopeSelect);
+      jest.advanceTimersByTime(1000);
+      expect(await screen.findByText('resource')).toBeInTheDocument();
+      expect(await screen.findByText('span')).toBeInTheDocument();
+      expect(await screen.findByText('unscoped')).toBeInTheDocument();
+      expect(screen.queryByText('intrinsic')).not.toBeInTheDocument();
+    }
+  });
 });
 
-const renderSearchField = (updateFilter: (f: TraceqlFilter) => void, filter: TraceqlFilter, tags?: string[]) => {
+const renderSearchField = (
+  updateFilter: (f: TraceqlFilter) => void,
+  filter: TraceqlFilter,
+  tags?: string[],
+  hideTag?: boolean
+) => {
+  const datasource: TempoDatasource = {
+    search: {
+      filters: [
+        {
+          id: 'service-name',
+          tag: 'service.name',
+          operator: '=',
+          scope: TraceqlSearchScope.Resource,
+        },
+        { id: 'span-name', type: 'static', tag: 'name', operator: '=', scope: TraceqlSearchScope.Span },
+      ],
+    },
+  } as TempoDatasource;
   return render(
     <SearchField
-      datasource={{} as TempoDatasource}
+      datasource={datasource}
       updateFilter={updateFilter}
       filter={filter}
       setError={function (error: FetchError): void {
         throw error;
       }}
       tags={tags || []}
+      hideTag={hideTag}
+      query={'{}'}
     />
   );
 };

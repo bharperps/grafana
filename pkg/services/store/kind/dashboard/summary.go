@@ -29,7 +29,7 @@ func GetEntitySummaryBuilder() entity.EntitySummaryBuilder {
 // This implementation moves datasources referenced by internal ID or name to UID
 func NewStaticDashboardSummaryBuilder(lookup DatasourceLookup, sanitize bool) entity.EntitySummaryBuilder {
 	return func(ctx context.Context, uid string, body []byte) (*entity.EntitySummary, []byte, error) {
-		var parsed map[string]interface{}
+		var parsed map[string]any
 
 		if sanitize {
 			err := json.Unmarshal(body, &parsed)
@@ -44,7 +44,7 @@ func NewStaticDashboardSummaryBuilder(lookup DatasourceLookup, sanitize bool) en
 
 		summary := &entity.EntitySummary{
 			Labels: make(map[string]string),
-			Fields: make(map[string]interface{}),
+			Fields: make(map[string]any),
 		}
 		stream := bytes.NewBuffer(body)
 		dash, err := readDashboard(stream, lookup)
@@ -74,18 +74,22 @@ func NewStaticDashboardSummaryBuilder(lookup DatasourceLookup, sanitize bool) en
 			}
 			p.Name = panel.Title
 			p.Description = panel.Description
-			p.Fields = make(map[string]interface{}, 0)
+			p.Fields = make(map[string]any, 0)
 			p.Fields["type"] = panel.Type
 
 			if panel.Type != "row" {
-				panelRefs.Add(entity.ExternalEntityReferencePlugin, string(plugins.Panel), panel.Type)
-				dashboardRefs.Add(entity.ExternalEntityReferencePlugin, string(plugins.Panel), panel.Type)
+				panelRefs.Add(entity.ExternalEntityReferencePlugin, string(plugins.TypePanel), panel.Type)
+				dashboardRefs.Add(entity.ExternalEntityReferencePlugin, string(plugins.TypePanel), panel.Type)
+			}
+			if panel.LibraryPanel != "" {
+				panelRefs.Add(entity.StandardKindLibraryPanel, panel.Type, panel.LibraryPanel)
+				dashboardRefs.Add(entity.StandardKindLibraryPanel, panel.Type, panel.LibraryPanel)
 			}
 			for _, v := range panel.Datasource {
 				dashboardRefs.Add(entity.StandardKindDataSource, v.Type, v.UID)
 				panelRefs.Add(entity.StandardKindDataSource, v.Type, v.UID)
 				if v.Type != "" {
-					dashboardRefs.Add(entity.ExternalEntityReferencePlugin, string(plugins.DataSource), v.Type)
+					dashboardRefs.Add(entity.ExternalEntityReferencePlugin, string(plugins.TypeDataSource), v.Type)
 				}
 			}
 			for _, v := range panel.Transformer {

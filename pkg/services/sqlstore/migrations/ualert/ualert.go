@@ -2,7 +2,6 @@ package ualert
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,9 +11,7 @@ import (
 	"strings"
 	"time"
 
-	alertingLogging "github.com/grafana/alerting/logging"
 	alertingNotify "github.com/grafana/alerting/notify"
-	"github.com/grafana/alerting/receivers"
 	pb "github.com/prometheus/alertmanager/silence/silencepb"
 	"xorm.io/xorm"
 
@@ -43,6 +40,9 @@ var rmMigTitle = "remove unified alerting data"
 const clearMigrationEntryTitle = "clear migration entry %q"
 const codeMigration = "code migration"
 
+// It is defined in pkg/expr/service.go as "DatasourceType"
+const expressionDatasourceUID = "__expr__"
+
 type MigrationError struct {
 	AlertId int64
 	Err     error
@@ -57,7 +57,7 @@ func (e *MigrationError) Unwrap() error { return e.Err }
 func AddDashAlertMigration(mg *migrator.Migrator) {
 	logs, err := mg.GetMigrationLog()
 	if err != nil {
-		mg.Logger.Error("alert migration failure: could not get migration log", "error", err)
+		mg.Logger.Error("Alert migration failure: could not get migration log", "error", err)
 		os.Exit(1)
 	}
 
@@ -72,7 +72,7 @@ func AddDashAlertMigration(mg *migrator.Migrator) {
 			migrationID: rmMigTitle,
 		})
 		if err != nil {
-			mg.Logger.Error("alert migration error: could not clear alert migration for removing data", "error", err)
+			mg.Logger.Error("Alert migration error: could not clear alert migration for removing data", "error", err)
 		}
 		mg.AddMigration(migTitle, &migration{
 			// We deduplicate for case-insensitive matching in MySQL-compatible backend flavours because they use case-insensitive collation.
@@ -96,7 +96,7 @@ func AddDashAlertMigration(mg *migrator.Migrator) {
 			migrationID: migTitle,
 		})
 		if err != nil {
-			mg.Logger.Error("alert migration error: could not clear dashboard alert migration", "error", err)
+			mg.Logger.Error("Alert migration error: could not clear dashboard alert migration", "error", err)
 		}
 		mg.AddMigration(rmMigTitle, &rmMigration{})
 	}
@@ -107,7 +107,7 @@ func AddDashAlertMigration(mg *migrator.Migrator) {
 func RerunDashAlertMigration(mg *migrator.Migrator) {
 	logs, err := mg.GetMigrationLog()
 	if err != nil {
-		mg.Logger.Error("alert migration failure: could not get migration log", "error", err)
+		mg.Logger.Error("Alert migration failure: could not get migration log", "error", err)
 		os.Exit(1)
 	}
 
@@ -128,7 +128,7 @@ func RerunDashAlertMigration(mg *migrator.Migrator) {
 func AddDashboardUIDPanelIDMigration(mg *migrator.Migrator) {
 	logs, err := mg.GetMigrationLog()
 	if err != nil {
-		mg.Logger.Error("alert migration failure: could not get migration log", "error", err)
+		mg.Logger.Error("Alert migration failure: could not get migration log", "error", err)
 		os.Exit(1)
 	}
 
@@ -245,7 +245,7 @@ func (m *migration) Exec(sess *xorm.Session, mg *migrator.Migrator) error {
 	if err != nil {
 		return err
 	}
-	mg.Logger.Info("alerts found to migrate", "alerts", len(dashAlerts))
+	mg.Logger.Info("Alerts found to migrate", "alerts", len(dashAlerts))
 
 	// [orgID, dataSourceId] -> UID
 	dsIDMap, err := m.slurpDSIDs()
@@ -264,10 +264,36 @@ func (m *migration) Exec(sess *xorm.Session, mg *migrator.Migrator) error {
 	// cache for the general folders
 	generalFolderCache := make(map[int64]*dashboard)
 
+	folderHelper := folderHelper{
+		sess: sess,
+		mg:   mg,
+	}
+
+	gf := func(dash dashboard, da dashAlert) (*dashboard, error) {
+		f, ok := generalFolderCache[dash.OrgId]
+		if !ok {
+			// get or create general folder
+			f, err = folderHelper.getOrCreateGeneralFolder(dash.OrgId)
+			if err != nil {
+				return nil, MigrationError{
+					Err:     fmt.Errorf("failed to get or create general folder under organisation %d: %w", dash.OrgId, err),
+					AlertId: da.Id,
+				}
+			}
+			generalFolderCache[dash.OrgId] = f
+		}
+		// No need to assign default permissions to general folder
+		// because they are included to the query result if it's a folder with no permissions
+		// https://github.com/grafana/grafana/blob/076e2ce06a6ecf15804423fcc8dca1b620a321e5/pkg/services/sqlstore/dashboard_acl.go#L109
+		return f, nil
+	}
+
 	// Per org map of newly created rules to which notification channels it should send to.
 	rulesPerOrg := make(map[int64]map[*alertRule][]uidOrID)
 
 	for _, da := range dashAlerts {
+		l := mg.Logger.New("ruleID", da.Id, "ruleName", da.Name, "dashboardUID", da.DashboardUID, "orgID", da.OrgId)
+		l.Debug("Migrating alert rule to Unified Alerting")
 		newCond, err := transConditions(*da.ParsedSettings, da.OrgId, dsIDMap)
 		if err != nil {
 			return err
@@ -291,18 +317,13 @@ func (m *migration) Exec(sess *xorm.Session, mg *migrator.Migrator) error {
 			}
 		}
 
-		folderHelper := folderHelper{
-			sess: sess,
-			mg:   mg,
-		}
-
 		var folder *dashboard
 		switch {
 		case dash.HasACL:
 			folderName := getAlertFolderNameFromDashboard(&dash)
 			f, ok := folderCache[folderName]
 			if !ok {
-				mg.Logger.Info("create a new folder for alerts that belongs to dashboard because it has custom permissions", "org", dash.OrgId, "dashboard_uid", dash.Uid, "folder", folderName)
+				l.Info("Create a new folder for alerts that belongs to dashboard because it has custom permissions", "folder", folderName)
 				// create folder and assign the permissions of the dashboard (included default and inherited)
 				f, err = folderHelper.createFolder(dash.OrgId, folderName)
 				if err != nil {
@@ -332,29 +353,20 @@ func (m *migration) Exec(sess *xorm.Session, mg *migrator.Migrator) error {
 			// get folder if exists
 			f, err := folderHelper.getFolder(dash, da)
 			if err != nil {
-				return MigrationError{
-					Err:     err,
-					AlertId: da.Id,
-				}
-			}
-			folder = &f
-		default:
-			f, ok := generalFolderCache[dash.OrgId]
-			if !ok {
-				// get or create general folder
-				f, err = folderHelper.getOrCreateGeneralFolder(dash.OrgId)
+				// If folder does not exist then the dashboard is an orphan and we migrate the alert to the general folder.
+				l.Warn("Failed to find folder for dashboard. Migrate rule to the default folder", "rule_name", da.Name, "dashboard_uid", da.DashboardUID, "missing_folder_id", dash.FolderId)
+				folder, err = gf(dash, da)
 				if err != nil {
-					return MigrationError{
-						Err:     fmt.Errorf("failed to get or create general folder under organisation %d: %w", dash.OrgId, err),
-						AlertId: da.Id,
-					}
+					return err
 				}
-				generalFolderCache[dash.OrgId] = f
+			} else {
+				folder = &f
 			}
-			// No need to assign default permissions to general folder
-			// because they are included to the query result if it's a folder with no permissions
-			// https://github.com/grafana/grafana/blob/076e2ce06a6ecf15804423fcc8dca1b620a321e5/pkg/services/sqlstore/dashboard_acl.go#L109
-			folder = f
+		default:
+			folder, err = gf(dash, da)
+			if err != nil {
+				return err
+			}
 		}
 
 		if folder.Uid == "" {
@@ -363,9 +375,9 @@ func (m *migration) Exec(sess *xorm.Session, mg *migrator.Migrator) error {
 				AlertId: da.Id,
 			}
 		}
-		rule, err := m.makeAlertRule(*newCond, da, folder.Uid)
+		rule, err := m.makeAlertRule(l, *newCond, da, folder.Uid)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to migrate alert rule '%s' [ID:%d, DashboardUID:%s, orgID:%d]: %w", da.Name, da.Id, da.DashboardUID, da.OrgId, err)
 		}
 
 		if _, ok := rulesPerOrg[rule.OrgID]; !ok {
@@ -383,7 +395,7 @@ func (m *migration) Exec(sess *xorm.Session, mg *migrator.Migrator) error {
 
 	for orgID := range rulesPerOrg {
 		if err := m.writeSilencesFile(orgID); err != nil {
-			m.mg.Logger.Error("alert migration error: failed to write silence file", "err", err)
+			m.mg.Logger.Error("Alert migration error: failed to write silence file", "err", err)
 		}
 	}
 
@@ -445,6 +457,9 @@ func (m *migration) writeAlertmanagerConfig(orgID int64, amConfig *PostableUserC
 		return err
 	}
 
+	// remove an existing configuration, which could have been left during switching back to legacy alerting
+	_, _ = m.sess.Delete(AlertConfiguration{OrgID: orgID})
+
 	// We don't need to apply the configuration, given the multi org alertmanager will do an initial sync before the server is ready.
 	_, err = m.sess.Insert(AlertConfiguration{
 		AlertmanagerConfiguration: string(rawAmConfig),
@@ -461,32 +476,21 @@ func (m *migration) writeAlertmanagerConfig(orgID int64, amConfig *PostableUserC
 }
 
 // validateAlertmanagerConfig validates the alertmanager configuration produced by the migration against the receivers.
-func (m *migration) validateAlertmanagerConfig(orgID int64, config *PostableUserConfig) error {
+func (m *migration) validateAlertmanagerConfig(config *PostableUserConfig) error {
 	for _, r := range config.AlertmanagerConfig.Receivers {
 		for _, gr := range r.GrafanaManagedReceivers {
-			// First, let's decode the secure settings - given they're stored as base64.
-			secureSettings := make(map[string][]byte, len(gr.SecureSettings))
-			for k, v := range gr.SecureSettings {
-				d, err := base64.StdEncoding.DecodeString(v)
-				if err != nil {
-					return err
-				}
-				secureSettings[k] = d
-			}
-
 			data, err := gr.Settings.MarshalJSON()
 			if err != nil {
 				return err
 			}
 			var (
-				cfg = &receivers.NotificationChannelConfig{
+				cfg = &alertingNotify.GrafanaIntegrationConfig{
 					UID:                   gr.UID,
-					OrgID:                 orgID,
 					Name:                  gr.Name,
 					Type:                  gr.Type,
 					DisableResolveMessage: gr.DisableResolveMessage,
 					Settings:              data,
-					SecureSettings:        secureSettings,
+					SecureSettings:        gr.SecureSettings,
 				}
 			)
 
@@ -496,24 +500,16 @@ func (m *migration) validateAlertmanagerConfig(orgID int64, config *PostableUser
 				if value, ok := sjd[key]; ok {
 					decryptedData, err := util.Decrypt(value, setting.SecretKey)
 					if err != nil {
-						m.mg.Logger.Warn("unable to decrypt key '%s' for %s receiver with uid %s, returning fallback.", key, gr.Type, gr.UID)
+						m.mg.Logger.Warn("Unable to decrypt key '%s' for %s receiver with uid %s, returning fallback.", key, gr.Type, gr.UID)
 						return fallback
 					}
 					return string(decryptedData)
 				}
 				return fallback
 			}
-			receiverFactory, exists := alertingNotify.Factory(gr.Type)
-			if !exists {
-				return fmt.Errorf("notifier %s is not supported", gr.Type)
-			}
-			factoryConfig, err := receivers.NewFactoryConfig(cfg, nil, decryptFunc, nil, nil, func(ctx ...interface{}) alertingLogging.Logger {
-				return &alertingLogging.FakeLogger{}
-			}, setting.BuildVersion)
-			if err != nil {
-				return err
-			}
-			_, err = receiverFactory(factoryConfig)
+			_, err = alertingNotify.BuildReceiverConfiguration(context.Background(), &alertingNotify.APIReceiver{
+				GrafanaIntegrations: alertingNotify.GrafanaIntegrations{Integrations: []*alertingNotify.GrafanaIntegrationConfig{cfg}},
+			}, decryptFunc)
 			if err != nil {
 				return err
 			}
@@ -595,7 +591,7 @@ func (m *rmMigration) Exec(sess *xorm.Session, mg *migrator.Migrator) error {
 	}
 	for _, f := range files {
 		if err := os.Remove(f); err != nil {
-			mg.Logger.Error("alert migration error: failed to remove silence file", "file", f, "err", err)
+			mg.Logger.Error("Alert migration error: failed to remove silence file", "file", f, "err", err)
 		}
 	}
 
@@ -686,7 +682,7 @@ func (u *upgradeNgAlerting) updateAlertConfigurations(sess *xorm.Session, migrat
 // Otherwise, it deletes those files.
 // pre-8.2 version put all configuration files into the root of alerting directory. Since 8.2 configuration files are put in organization specific directory
 func (u *upgradeNgAlerting) updateAlertmanagerFiles(orgId int64, migrator *migrator.Migrator) {
-	knownFiles := map[string]interface{}{"__default__.tmpl": nil, "silences": nil, "notifications": nil}
+	knownFiles := map[string]any{"__default__.tmpl": nil, "silences": nil, "notifications": nil}
 	alertingDir := filepath.Join(migrator.Cfg.DataPath, "alerting")
 
 	// do not fail if something goes wrong because these files are not used anymore. the worst that can happen is that we leave some leftovers behind
@@ -797,7 +793,7 @@ func (c createDefaultFoldersForAlertingMigration) Exec(sess *xorm.Session, migra
 		if err != nil {
 			return fmt.Errorf("failed to create the default alerting folder for organization %s (ID: %d): %w", row.Name, row.Id, err)
 		}
-		migrator.Logger.Info("created the default folder for alerting", "org_id", row.Id, "folder_name", folder.Title, "folder_uid", folder.Uid)
+		migrator.Logger.Info("Created the default folder for alerting", "org_id", row.Id, "folder_name", folder.Title, "folder_uid", folder.Uid)
 	}
 	return nil
 }
@@ -862,7 +858,7 @@ func (c updateRulesOrderInGroup) Exec(sess *xorm.Session, migrator *migrator.Mig
 	}
 
 	updated := time.Now()
-	versions := make([]interface{}, 0, len(toUpdate))
+	versions := make([]any, 0, len(toUpdate))
 
 	for _, rule := range toUpdate {
 		rule.Updated = updated
@@ -872,15 +868,15 @@ func (c updateRulesOrderInGroup) Exec(sess *xorm.Session, migrator *migrator.Mig
 		rule.Version++
 		_, err := sess.ID(rule.ID).Cols("version", "updated", "rule_group_idx").Update(rule)
 		if err != nil {
-			migrator.Logger.Error("failed to update alert rule", "uid", rule.UID, "err", err)
+			migrator.Logger.Error("Failed to update alert rule", "uid", rule.UID, "err", err)
 			return fmt.Errorf("unable to update alert rules with group index: %w", err)
 		}
-		migrator.Logger.Debug("updated group index for alert rule", "rule_uid", rule.UID)
+		migrator.Logger.Debug("Updated group index for alert rule", "rule_uid", rule.UID)
 		versions = append(versions, version)
 	}
 	_, err := sess.Insert(versions...)
 	if err != nil {
-		migrator.Logger.Error("failed to insert changes to alert_rule_version", "err", err)
+		migrator.Logger.Error("Failed to insert changes to alert_rule_version", "err", err)
 		return fmt.Errorf("unable to update alert rules with group index: %w", err)
 	}
 	return nil

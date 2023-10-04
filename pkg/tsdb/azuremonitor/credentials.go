@@ -6,8 +6,8 @@ import (
 	"github.com/grafana/grafana-azure-sdk-go/azcredentials"
 	"github.com/grafana/grafana-azure-sdk-go/azsettings"
 
-	"github.com/grafana/grafana/pkg/components/simplejson"
 	"github.com/grafana/grafana/pkg/setting"
+	"github.com/grafana/grafana/pkg/tsdb/azuremonitor/types"
 )
 
 // Azure cloud names specific to Azure Monitor
@@ -18,12 +18,12 @@ const (
 	azureMonitorCustomized   = "customizedazuremonitor"
 )
 
-func getAuthType(cfg *setting.Cfg, jsonData *simplejson.Json) string {
-	if azureAuthType := jsonData.Get("azureAuthType").MustString(); azureAuthType != "" {
+func getAuthType(cfg *setting.Cfg, jsonData *types.AzureClientSettings) string {
+	if azureAuthType := jsonData.AzureAuthType; azureAuthType != "" {
 		return azureAuthType
 	} else {
-		tenantId := jsonData.Get("tenantId").MustString()
-		clientId := jsonData.Get("clientId").MustString()
+		tenantId := jsonData.TenantId
+		clientId := jsonData.ClientId
 
 		// If authentication type isn't explicitly specified and datasource has client credentials,
 		// then this is existing datasource which is configured for app registration (client secret)
@@ -31,10 +31,14 @@ func getAuthType(cfg *setting.Cfg, jsonData *simplejson.Json) string {
 			return azcredentials.AzureAuthClientSecret
 		}
 
-		// For newly created datasource with no configuration, managed identity is the default authentication type
-		// if they are enabled in Grafana config
+		// For newly created datasource with no configuration the order is as follows:
+		// Managed identity is the default if enabled
+		// Workload identity is the next option if enabled
+		// Client secret is the final fallback
 		if cfg.Azure.ManagedIdentityEnabled {
 			return azcredentials.AzureAuthManagedIdentity
+		} else if cfg.Azure.WorkloadIdentityEnabled {
+			return azcredentials.AzureAuthWorkloadIdentity
 		} else {
 			return azcredentials.AzureAuthClientSecret
 		}
@@ -81,14 +85,14 @@ func normalizeAzureCloud(cloudName string) (string, error) {
 	}
 }
 
-func getAzureCloud(cfg *setting.Cfg, jsonData *simplejson.Json) (string, error) {
+func getAzureCloud(cfg *setting.Cfg, jsonData *types.AzureClientSettings) (string, error) {
 	authType := getAuthType(cfg, jsonData)
 	switch authType {
-	case azcredentials.AzureAuthManagedIdentity:
-		// In case of managed identity, the cloud is always same as where Grafana is hosted
+	case azcredentials.AzureAuthManagedIdentity, azcredentials.AzureAuthWorkloadIdentity:
+		// In case of managed identity and workload identity, the cloud is always same as where Grafana is hosted
 		return getDefaultAzureCloud(cfg)
 	case azcredentials.AzureAuthClientSecret:
-		if cloud := jsonData.Get("cloudName").MustString(); cloud != "" {
+		if cloud := jsonData.CloudName; cloud != "" {
 			return normalizeAzureCloud(cloud)
 		} else {
 			return getDefaultAzureCloud(cfg)
@@ -99,14 +103,16 @@ func getAzureCloud(cfg *setting.Cfg, jsonData *simplejson.Json) (string, error) 
 	}
 }
 
-func getAzureCredentials(cfg *setting.Cfg, jsonData *simplejson.Json, secureJsonData map[string]string) (azcredentials.AzureCredentials, error) {
+func getAzureCredentials(cfg *setting.Cfg, jsonData *types.AzureClientSettings, secureJsonData map[string]string) (azcredentials.AzureCredentials, error) {
 	authType := getAuthType(cfg, jsonData)
 
 	switch authType {
 	case azcredentials.AzureAuthManagedIdentity:
 		credentials := &azcredentials.AzureManagedIdentityCredentials{}
 		return credentials, nil
-
+	case azcredentials.AzureAuthWorkloadIdentity:
+		credentials := &azcredentials.AzureWorkloadIdentityCredentials{}
+		return credentials, nil
 	case azcredentials.AzureAuthClientSecret:
 		cloud, err := getAzureCloud(cfg, jsonData)
 		if err != nil {
@@ -117,8 +123,8 @@ func getAzureCredentials(cfg *setting.Cfg, jsonData *simplejson.Json, secureJson
 		}
 		credentials := &azcredentials.AzureClientSecretCredentials{
 			AzureCloud:   cloud,
-			TenantId:     jsonData.Get("tenantId").MustString(),
-			ClientId:     jsonData.Get("clientId").MustString(),
+			TenantId:     jsonData.TenantId,
+			ClientId:     jsonData.ClientId,
 			ClientSecret: secureJsonData["clientSecret"],
 		}
 		return credentials, nil

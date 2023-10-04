@@ -1,5 +1,99 @@
 {
-  "_comment": "Do not manually edit this file. Translations must be made in Crowdin which will sync them back into this file",
+  "_comment": "",
+  "access-control": {
+    "add-permission": {
+      "role-label": "",
+      "team-label": "",
+      "title": "",
+      "user-label": ""
+    },
+    "add-permissions": {
+      "save": ""
+    },
+    "permission-list": {
+      "permission": ""
+    },
+    "permissions": {
+      "add-label": "",
+      "no-permissions": "",
+      "permissions-change-warning": "",
+      "role": "",
+      "team": "",
+      "title": "",
+      "user": ""
+    }
+  },
+  "browse-dashboards": {
+    "action": {
+      "cancel-button": "",
+      "cannot-move-folders": "",
+      "delete-button": "",
+      "delete-modal-invalid-text": "",
+      "delete-modal-invalid-title": "",
+      "delete-modal-text": "",
+      "delete-modal-title": "",
+      "deleting": "",
+      "manage-permissions-button": "",
+      "move-button": "",
+      "move-modal-alert": "",
+      "move-modal-field-label": "",
+      "move-modal-text": "",
+      "move-modal-title": "",
+      "moving": "",
+      "new-folder-name-required-phrase": ""
+    },
+    "counts": {
+      "alertRule__one": "",
+      "alertRule__many": "",
+      "alertRule__other": "",
+      "dashboard__one": "",
+      "dashboard__many": "",
+      "dashboard__other": "",
+      "folder__one": "",
+      "folder__many": "",
+      "folder__other": "",
+      "libraryPanel__one": "",
+      "libraryPanel__many": "",
+      "libraryPanel__other": "",
+      "total__one": "",
+      "total__many": "",
+      "total__other": ""
+    },
+    "dashboards-tree": {
+      "name-column": "",
+      "tags-column": ""
+    },
+    "folder-actions-button": {
+      "delete": "",
+      "folder-actions": "",
+      "manage-permissions": "",
+      "move": ""
+    },
+    "folder-picker": {
+      "accessible-label": "",
+      "button-label": "",
+      "empty-message": "",
+      "error-title": "",
+      "search-placeholder": "",
+      "unknown-error": ""
+    },
+    "manage-folder-nav": {
+      "alert-rules": "",
+      "dashboards": "",
+      "panels": "",
+      "permissions": "",
+      "settings": ""
+    },
+    "new-folder-form": {
+      "cancel-label": "",
+      "create-label": "",
+      "name-label": ""
+    },
+    "no-results": {
+      "clear": "",
+      "text": ""
+    }
+  },
   "clipboard-button": {
     "inline-toast": {
       "success": "Copié"
@@ -7,20 +101,20 @@
   },
   "command-palette": {
     "action": {
-      "change-theme": "",
-      "dark-theme": "",
-      "light-theme": ""
+      "change-theme": "Modifier le thème...",
+      "dark-theme": "Sombre",
+      "light-theme": "Clair"
     },
     "search-box": {
-      "placeholder": ""
+      "placeholder": "Rechercher ou aller à..."
     },
     "section": {
-      "actions": "",
-      "dashboard-search-results": "",
-      "folder-search-results": "",
-      "pages": "",
-      "preferences": "",
-      "recent-dashboards": ""
+      "actions": "Actions",
+      "dashboard-search-results": "Tableaux de bord",
+      "folder-search-results": "Dossiers",
+      "pages": "Pages",
+      "preferences": "Préférences",
+      "recent-dashboards": "Tableaux de bord récents"
     }
   },
   "common": {
@@ -29,7 +123,54 @@
     },
     "save": "Enregistrer"
   },
+  "connections": {
+    "connect-data": {
+      "category-header-label": ""
+    },
+    "search": {
+      "placeholder": ""
+    }
+  },
+  "correlations": {
+    "add-new": "",
+    "alert": {
+      "error-message": "",
+      "title": ""
+    },
+    "list": {
+      "delete": "",
+      "label": "",
+      "loading": "",
+      "read-only": "",
+      "source": "",
+      "target": ""
+    },
+    "page-content": "",
+    "page-heading": "",
+    "sub-title": ""
+  },
   "dashboard": {
+    "add-menu": {
+      "import": "Importer depuis la bibliothèque",
+      "paste-panel": "Coller le panneau",
+      "row": "Ligne",
+      "visualization": "Visualisation",
+      "widget": ""
+    },
+    "empty": {
+      "add-library-panel-body": "",
+      "add-library-panel-button": "",
+      "add-library-panel-header": "",
+      "add-visualization-body": "Sélectionnez une source de données, puis examinez et visualisez vos données avec des graphiques, des statistiques et des tableaux ou créez des listes, des markdowns et d'autres widgets.",
+      "add-visualization-button": "Ajouter une visualisation",
+      "add-visualization-header": "Commencez votre nouveau tableau de bord en ajoutant une visualisation",
+      "add-widget-body": "",
+      "add-widget-button": "",
+      "add-widget-header": "",
+      "import-a-dashboard-body": "",
+      "import-a-dashboard-header": "",
+      "import-dashboard-button": ""
+    },
     "inspect": {
       "data-tab": "Données",
       "error-tab": "Erreur",
@@ -75,6 +216,7 @@
     },
     "inspect-stats": {
       "data-title": "Statistiques de source de données",
+      "data-traceids": "ID de suivi",
       "processing-time": "Durée de traitement des données",
       "queries": "Nombre de requêtes",
       "request-time": "Durée totale de la requête",
@@ -82,6 +224,7 @@
       "table-title": "Statistiques"
     },
     "toolbar": {
+      "add": "Ajouter",
       "add-panel": "Ajouter un panneau",
       "mark-favorite": "Marquer comme favori",
       "open-original": "Ouvrir le tableau de bord d'origine",
@@ -92,28 +235,169 @@
       "save": "Enregistrer le tableau de bord",
       "settings": "Paramètres du tableau de bord",
       "share": "Partager le tableau de bord ou le panneau",
-      "tv-button": "Mode de vue par cycle",
       "unmark-favorite": "Supprimer des favoris"
+    },
+    "validation": {
+      "invalid-dashboard-id": "",
+      "invalid-json": "",
+      "tags-expected-array": "",
+      "tags-expected-strings": ""
     }
   },
-  "datasource-onboarding": {
-    "contact-admin": "Veuillez contacter votre administrateur pour configurer les sources de données.",
-    "explanation": "Pour visualiser vos données, vous devrez d’abord les connecter.",
-    "new-dashboard": "Nouveau tableau de bord",
-    "preferred": "Connectez votre source de données préférée\u00a0:",
-    "sampleData": "Ou établissez un nouveau tableau de bord avec des exemples de données",
-    "viewAll": "Afficher tout",
-    "welcome": "Bienvenue aux tableaux de bord Grafana !"
+  "dashboard-import": {
+    "file-dropzone": {
+      "primary-text": "",
+      "secondary-text": ""
+    },
+    "form-actions": {
+      "cancel": "",
+      "load": ""
+    },
+    "gcom-field": {
+      "label": "",
+      "load-button": "",
+      "placeholder": "",
+      "validation-required": ""
+    },
+    "json-field": {
+      "label": "",
+      "validation-required": ""
+    }
+  },
+  "dashboard-settings": {
+    "annotations": {
+      "title": ""
+    },
+    "dashboard-delete-button": "",
+    "general": {
+      "auto-refresh-description": "",
+      "auto-refresh-label": "",
+      "description-label": "",
+      "editable-description": "",
+      "editable-label": "",
+      "folder-label": "",
+      "panel-options-graph-tooltip-description": "",
+      "panel-options-graph-tooltip-label": "",
+      "panel-options-label": "",
+      "tags-label": "",
+      "title": "",
+      "title-label": ""
+    },
+    "json-editor": {
+      "save-button": "",
+      "subtitle": "",
+      "title": ""
+    },
+    "links": {
+      "title": ""
+    },
+    "permissions": {
+      "title": ""
+    },
+    "settings": {
+      "title": ""
+    },
+    "time-picker": {
+      "hide-time-picker": "",
+      "now-delay-description": "",
+      "now-delay-label": "",
+      "refresh-live-dashboards-description": "",
+      "refresh-live-dashboards-label": "",
+      "time-options-label": "",
+      "time-zone-label": "",
+      "week-start-label": ""
+    },
+    "variables": {
+      "title": ""
+    },
+    "versions": {
+      "title": ""
+    }
+  },
+  "data-source-picker": {
+    "open-advanced-button": ""
+  },
+  "data-sources": {
+    "datasource-add-button": {
+      "label": ""
+    }
+  },
+  "explore": {
+    "add-to-dashboard": "",
+    "table": {
+      "no-data": "",
+      "title": "",
+      "title-with-name": ""
+    },
+    "toolbar": {
+      "aria-label": "",
+      "copy-shortened-link": "",
+      "refresh-picker-cancel": "",
+      "refresh-picker-run": "",
+      "split-close": "",
+      "split-close-tooltip": "",
+      "split-narrow": "",
+      "split-title": "",
+      "split-tooltip": "",
+      "split-widen": ""
+    }
   },
   "folder-picker": {
     "loading": "Chargement des dossiers..."
   },
   "grafana-ui": {
+    "modal": {
+      "close-tooltip": ""
+    },
     "segment-async": {
-      "error": "",
-      "loading": "",
-      "no-options": ""
+      "error": "Échec du chargement des options",
+      "loading": "Chargement des options...",
+      "no-options": "Aucune option trouvée"
+    },
+    "select": {
+      "no-options-label": "",
+      "placeholder": ""
     }
+  },
+  "help-modal": {
+    "shortcuts-category": {
+      "dashboard": "",
+      "focused-panel": "",
+      "global": "",
+      "time-range": ""
+    },
+    "shortcuts-description": {
+      "change-theme": "",
+      "collapse-all-rows": "",
+      "dashboard-settings": "",
+      "duplicate-panel": "",
+      "exit-edit/setting-views": "",
+      "expand-all-rows": "",
+      "go-to-dashboards": "",
+      "go-to-explore": "",
+      "go-to-home-dashboard": "",
+      "go-to-profile": "",
+      "make-time-range-permanent": "",
+      "move-time-range-back": "",
+      "move-time-range-forward": "",
+      "open-search": "",
+      "open-shared-modal": "",
+      "refresh-all-panels": "",
+      "remove-panel": "",
+      "save-dashboard": "",
+      "show-all-shortcuts": "",
+      "toggle-active-mode": "",
+      "toggle-all-panel-legends": "",
+      "toggle-auto-fit": "",
+      "toggle-exemplars": "",
+      "toggle-graph-crosshair": "",
+      "toggle-kiosk": "",
+      "toggle-panel-edit": "",
+      "toggle-panel-fullscreen": "",
+      "toggle-panel-legend": "",
+      "zoom-out-time-range": ""
+    },
+    "title": ""
   },
   "library-panel": {
     "add-modal": {
@@ -123,15 +407,41 @@
       "folder": "Enregistrer dans le dossier",
       "folder-description": "Les autorisations du panneau de bibliothèque sont dérivées des autorisations du dossier",
       "name": "Nom du panneau de bibliothèque"
+    },
+    "add-widget": {
+      "title": "Ajouter un panneau depuis la bibliothèque de panneau"
     }
   },
   "library-panels": {
+    "modal": {
+      "body__one": "",
+      "body__many": "",
+      "body__other": "",
+      "button-cancel": "",
+      "button-view-panel1": "",
+      "button-view-panel2": "",
+      "panel-not-linked": "",
+      "select-no-options-message": "",
+      "select-placeholder": "",
+      "title": ""
+    },
     "save": {
       "error": "Erreur lors de l'enregistrement du panneau de bibliothèque\u00a0: \"{{errorMsg}}\"",
       "success": "Panneau de bibliothèque enregistré"
     }
   },
+  "login": {
+    "error": {
+      "blocked": "",
+      "invalid-user-or-password": "",
+      "title": "",
+      "unknown": ""
+    }
+  },
   "nav": {
+    "add-new-connections": {
+      "title": ""
+    },
     "admin": {
       "subtitle": "Gérer les paramètres à l'échelle du serveur et l'accès aux ressources telles que les organisations, les utilisateurs et les licences",
       "title": "Administrateur de serveur"
@@ -165,7 +475,7 @@
       "title": "Règles d'alerte"
     },
     "alerting-receivers": {
-      "subtitle": "Décider la manière dont vos contacts sont informés lorsqu'une alerte se déclenche",
+      "subtitle": "Choisissez comment informer vos points de contact quand une instance d'alerte se déclenche",
       "title": "Points de contact"
     },
     "alerting-silences": {
@@ -174,19 +484,31 @@
     },
     "alerts-and-incidents": {
       "subtitle": "Applications de gestion des incidents et des alertes",
-      "title": "Alertes et incidents"
+      "title": "Alertes et IRM"
     },
     "api-keys": {
       "subtitle": "Gérer et créer des clés API utilisées pour interagir avec les API HTTP de Grafana",
       "title": "Clés API"
     },
+    "application": {
+      "title": ""
+    },
     "apps": {
       "subtitle": "Plugins d'application qui prolongent l'expérience Grafana",
       "title": "Applications"
     },
+    "authentication": {
+      "title": ""
+    },
     "config": {
-      "title": "Administration",
-      "titleBeforeTopnav": "Configuration"
+      "title": "Administration"
+    },
+    "connect-data": {
+      "title": ""
+    },
+    "connections": {
+      "subtitle": "",
+      "title": ""
     },
     "correlations": {
       "subtitle": "Ajouter et configurer des corrélations",
@@ -196,7 +518,7 @@
       "title": "Créer"
     },
     "create-alert": {
-      "title": "Nouvelle règle d'alerte"
+      "title": "Créer une règle d’alerte"
     },
     "create-dashboard": {
       "title": "Tableau de bord"
@@ -205,18 +527,28 @@
       "title": "Dossier"
     },
     "create-import": {
-      "title": "Importer"
+      "title": "Importer un tableau de bord"
     },
     "dashboards": {
       "subtitle": "Créer et gérer des tableaux de bord pour visualiser vos données",
       "title": "Tableaux de bord"
     },
+    "data-sources": {
+      "subtitle": "",
+      "title": ""
+    },
     "datasources": {
       "subtitle": "Ajouter et configurer des sources de données",
       "title": "Sources de données"
     },
+    "detect": {
+      "title": ""
+    },
     "explore": {
       "title": "Explorer"
+    },
+    "frontend": {
+      "title": ""
     },
     "global-orgs": {
       "subtitle": "Instances isolées de Grafana exécutées sur le même serveur",
@@ -224,8 +556,10 @@
     },
     "global-users": {
       "subtitle": "Gérer les utilisateurs dans Grafana",
-      "title": "Utilisateurs",
-      "titleBeforeTopnav": "Utilisateurs"
+      "title": "Utilisateurs"
+    },
+    "grafana-quaderno": {
+      "title": ""
     },
     "help": {
       "title": "Aide"
@@ -237,22 +571,31 @@
     "home": {
       "title": "Accueil"
     },
+    "incidents": {
+      "title": ""
+    },
+    "infrastructure": {
+      "title": ""
+    },
+    "kubernetes": {
+      "title": ""
+    },
     "library-panels": {
       "subtitle": "Panneaux réutilisables pouvant être ajoutés à plusieurs tableaux de bord",
       "title": "Panneaux de bibliothèque"
     },
-    "manage-dashboards": {
-      "title": "Parcourir"
+    "machine-learning": {
+      "title": ""
     },
     "manage-folder": {
-      "subtitle": ""
+      "subtitle": "Gérer les tableaux de bord et les autorisations des dossiers"
     },
     "monitoring": {
       "subtitle": "Applications de suivi et d'infrastructure",
-      "title": "Suivi"
+      "title": "Observabilité"
     },
     "new": {
-      "title": ""
+      "title": "Nouveau"
     },
     "new-dashboard": {
       "title": "Nouveau tableau de bord"
@@ -260,10 +603,18 @@
     "new-folder": {
       "title": "Nouveau dossier"
     },
+    "observability": {
+      "title": ""
+    },
+    "oncall": {
+      "title": ""
+    },
     "org-settings": {
       "subtitle": "Gérer les préférences au sein d'une organisation",
-      "title": "Préférences par défaut",
-      "titleBeforeTopnav": "Préférences"
+      "title": "Préférences par défaut"
+    },
+    "performance-testing": {
+      "title": ""
     },
     "playlists": {
       "subtitle": "Groupes de tableaux de bord affichés dans une séquence",
@@ -280,17 +631,25 @@
       "title": "Modifier le mot de passe"
     },
     "profile/settings": {
-      "title": "Préférences"
+      "title": "Profil"
     },
-    "profile/switch-org": "Passer à une autre organisation",
+    "profiles": {
+      "title": ""
+    },
     "public": {
+      "title": "Tableaux de bord publics"
+    },
+    "recorded-queries": {
+      "title": ""
+    },
+    "reporting": {
       "title": ""
     },
     "scenes": {
       "title": "Scènes"
     },
     "search": {
-      "placeholderCommandPalette": ""
+      "placeholderCommandPalette": "Rechercher ou aller à..."
     },
     "search-dashboards": {
       "title": "Rechercher dans les tableaux de bord"
@@ -303,9 +662,11 @@
       "subtitle": "Utiliser des comptes de service pour exécuter des charges de travail automatisées dans Grafana",
       "title": "Comptes de service"
     },
-    "sign-in": "Se connecter",
     "sign-out": {
       "title": "Se déconnecter"
+    },
+    "slo": {
+      "title": ""
     },
     "snapshots": {
       "subtitle": "Représentations interactives, accessibles au public et ponctuelles des tableaux de bord",
@@ -317,6 +678,9 @@
     "starred-empty": {
       "title": "Vos tableaux de bord favoris apparaîtront ici"
     },
+    "statistics-and-licensing": {
+      "title": ""
+    },
     "storage": {
       "subtitle": "Gérer le stockage de fichiers",
       "title": "Stockage"
@@ -324,6 +688,9 @@
     "support-bundles": {
       "subtitle": "Télécharger les packs d’assistance",
       "title": "Packs d’assistance"
+    },
+    "synthetics": {
+      "title": ""
     },
     "teams": {
       "subtitle": "Groupes d'utilisateurs ayant des besoins communs en matière de tableau de bord et d'autorisations",
@@ -342,9 +709,9 @@
       "tv-alert": "Appuyez sur ESC pour quitter le mode kiosque"
     },
     "toolbar": {
-      "enable-kiosk": "",
-      "toggle-menu": "",
-      "toggle-search-bar": ""
+      "enable-kiosk": "Activer le mode kiosque",
+      "toggle-menu": "Afficher/Masquer le menu",
+      "toggle-search-bar": "Afficher/Masquer la barre de recherche"
     }
   },
   "news": {
@@ -356,29 +723,93 @@
   },
   "panel": {
     "header-menu": {
-      "copy": "",
-      "create-library-panel": "",
-      "duplicate": "",
-      "edit": "",
-      "explore": "",
-      "get-help": "",
+      "copy": "Copier",
+      "create-library-panel": "Créer un panneau Bibliothèque",
+      "duplicate": "Dupliquer",
+      "edit": "Modifier",
+      "explore": "Explorer",
+      "get-help": "Obtenir de l’aide",
       "hide-legend": "Masquer la légende",
       "inspect": "Inspecter",
       "inspect-data": "Données",
       "inspect-json": "Panneau JSON",
       "more": "Plus...",
-      "query": "",
-      "remove": "",
+      "query": "Requête",
+      "remove": "Supprimer",
       "share": "Partager",
       "show-legend": "Afficher la légende",
-      "unlink-library-panel": "",
+      "unlink-library-panel": "Dissocier le panneau Bibliothèque",
       "view": "Afficher"
+    }
+  },
+  "playlist-edit": {
+    "error-prefix": "",
+    "form": {
+      "add-tag-label": "",
+      "add-tag-placeholder": "",
+      "add-title-label": "",
+      "cancel": "",
+      "heading": "",
+      "interval-label": "",
+      "interval-placeholder": "",
+      "interval-required": "",
+      "name-label": "",
+      "name-placeholder": "",
+      "name-required": "",
+      "save": "",
+      "table-delete": "",
+      "table-drag": "",
+      "table-empty": "",
+      "table-heading": ""
+    },
+    "sub-title": "",
+    "title": ""
+  },
+  "playlist-page": {
+    "card": {
+      "delete": "",
+      "edit": "",
+      "start": "",
+      "tooltip": ""
+    },
+    "create-button": {
+      "title": ""
+    },
+    "delete-modal": {
+      "body": "",
+      "confirm-text": ""
+    },
+    "empty": {
+      "button": "",
+      "pro-tip": "",
+      "pro-tip-link-title": "",
+      "title": ""
+    }
+  },
+  "profile": {
+    "change-password": {
+      "cancel-button": "",
+      "cannot-change-password-message": "",
+      "change-password-button": "",
+      "confirm-password-label": "",
+      "confirm-password-required": "",
+      "ldap-auth-proxy-message": "",
+      "new-password-label": "",
+      "new-password-required": "",
+      "new-password-same-as-old": "",
+      "old-password-label": "",
+      "old-password-required": "",
+      "passwords-must-match": ""
     }
   },
   "refresh-picker": {
     "aria-label": {
       "choose-interval": "Actualisation automatique désactivée. Choisir un intervalle de temps d'actualisation",
       "duration-selected": "Choisir l'intervalle de temps d'actualisation avec l'intervalle actuel {{durationAriaLabel}} sélectionné"
+    },
+    "auto-option": {
+      "aria-label": "",
+      "label": ""
     },
     "live-option": {
       "aria-label": "Activer la diffusion en direct",
@@ -388,47 +819,53 @@
       "aria-label": "Désactiver l'actualisation automatique",
       "label": "Désactivé"
     },
-    "select-button": {
-      "auto-refresh": "Définir l'intervalle d'actualisation automatique"
+    "tooltip": {
+      "interval-selected": "",
+      "turned-off": ""
     }
   },
   "search": {
     "actions": {
-      "include-panels": "",
-      "remove-datasource-filter": "",
-      "sort-placeholder": "",
-      "starred": "",
-      "view-as-folders": "",
-      "view-as-grid": "",
-      "view-as-list": ""
+      "include-panels": "Inclure des panneaux",
+      "remove-datasource-filter": "Source de données : {{datasource}}",
+      "sort-placeholder": "Trier",
+      "starred": "Favoris",
+      "view-as-folders": "Voir par dossier",
+      "view-as-list": "Voir en tant que liste"
     },
     "dashboard-actions": {
-      "import": "",
-      "new": "",
-      "new-dashboard": "",
-      "new-folder": ""
+      "import": "Importer",
+      "new": "Nouveau",
+      "new-dashboard": "Nouveau tableau de bord",
+      "new-folder": "Nouveau dossier"
     },
     "folder-view": {
-      "go-to-folder": "",
-      "select-folder": ""
+      "go-to-folder": "Aller dans le dossier",
+      "select-folder": "Sélectionner un dossier"
     },
     "result-kind": {
-      "dashboard": "",
-      "folder": "",
-      "panel": ""
+      "dashboard": "Tableau de bord",
+      "folder": "Dossier",
+      "panel": "Panneau"
     },
     "results-table": {
-      "datasource-header": "",
-      "location-header": "",
-      "name-header": "",
-      "tags-header": "",
-      "type-dashboard": "",
-      "type-folder": "",
-      "type-header": ""
+      "datasource-header": "Source de données",
+      "location-header": "Emplacement",
+      "name-header": "Nom",
+      "tags-header": "Étiquettes",
+      "type-dashboard": "Tableau de bord",
+      "type-folder": "Dossier",
+      "type-header": "Type"
     },
     "search-input": {
-      "include-panels-placeholder": "",
-      "placeholder": ""
+      "include-panels-placeholder": "Rechercher des tableaux de bord et des panneaux",
+      "placeholder": "Rechercher des tableaux de bord"
+    }
+  },
+  "search-view": {
+    "no-results": {
+      "clear": "",
+      "text": ""
     }
   },
   "share-modal": {
@@ -444,6 +881,7 @@
       "time-range-description": "Transforme la période temporelle relative actuelle en une période temporelle absolue"
     },
     "export": {
+      "back-button": "",
       "cancel-button": "Annuler",
       "info-text": "Exporter ce tableau de bord.",
       "save-button": "Enregistrer dans un fichier",
@@ -506,6 +944,26 @@
       "copy-button": "Copier dans le presse-papiers"
     }
   },
+  "share-playlist": {
+    "checkbox-description": "",
+    "checkbox-label": "",
+    "copy-link-button": "",
+    "link-url-label": "",
+    "mode": "",
+    "mode-kiosk": "",
+    "mode-normal": "",
+    "mode-tv": "",
+    "title": ""
+  },
+  "shared": {
+    "preferences": {
+      "theme": {
+        "dark-label": "",
+        "light-label": "",
+        "system-label": ""
+      }
+    }
+  },
   "shared-dashboard": {
     "fields": {
       "timezone-label": "Fuseau horaire"
@@ -521,17 +979,20 @@
       "week-start-label": "Début de la semaine"
     },
     "theme": {
-      "dark-label": "Sombre",
-      "default-label": "Par défaut",
-      "light-label": "Clair",
-      "system-label": ""
+      "default-label": "Par défaut"
     },
     "title": "Préférences"
   },
+  "snapshot": {
+    "external-badge": "",
+    "name-column-header": "",
+    "url-column-header": "",
+    "view-button": ""
+  },
   "tag-filter": {
-    "loading": "",
-    "no-tags": "",
-    "placeholder": ""
+    "loading": "Chargement en cours...",
+    "no-tags": "Aucune étiquette trouvée",
+    "placeholder": "Filtrer par étiquette"
   },
   "time-picker": {
     "absolute": {
@@ -544,7 +1005,8 @@
       "select-time": "Sélectionner une plage de temps"
     },
     "content": {
-      "empty-recent-list": "<0><0>Il semble que vous n'ayez jamais utilisé ce sélecteur de temps dans le passé. Lorsque vous commencerez à utiliser des plages de temps, celles récemment utilisées apparaîtront ici. /0></0><1><0>Lisez la documentation</0><1> pour savoir comment entrer des plages de temps personnalisées.</1></1>",
+      "empty-recent-list-docs": "<0><0>Lisez la documentation</0><1> pour savoir comment entrer des plages de temps personnalisées.</1></0>",
+      "empty-recent-list-info": "Il semble que vous n'ayez jamais utilisé ce sélecteur de temps dans le passé. Lorsque vous commencerez à utiliser des plages de temps, celles récemment utilisées apparaîtront ici.",
       "filter-placeholder": "Rechercher dans les plages rapides"
     },
     "footer": {
@@ -609,10 +1071,10 @@
   },
   "variable": {
     "adhoc": {
-      "placeholder": ""
+      "placeholder": "Sélectionner une valeur"
     },
     "dropdown": {
-      "placeholder": ""
+      "placeholder": "Entrer la valeur de la variable"
     },
     "picker": {
       "link-all": "Tout",
@@ -621,7 +1083,7 @@
       "option-tooltip": "Effacer les sélections"
     },
     "textbox": {
-      "placeholder": ""
+      "placeholder": "Entrer la valeur de la variable"
     }
   }
 }

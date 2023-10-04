@@ -42,6 +42,13 @@ const (
 	// the kind may need to change to better encapsulate { targets:[], transforms:[] }
 	StandardKindQuery = "query"
 
+	// StandardKindAlertRule is not a real kind. It's used to refer to alert rules, for instance
+	// in the folder registry service.
+	StandardKindAlertRule = "alertrule"
+
+	// StandardKindLibraryPanel is for library panels
+	StandardKindLibraryPanel = "librarypanel"
+
 	//----------------------------------------
 	// References are referenced from objects
 	//----------------------------------------
@@ -101,7 +108,7 @@ type EntitySummary struct {
 	Error *EntityErrorInfo `json:"error,omitempty"`
 
 	// Optional field values.  The schema will define and document possible values for a given kind
-	Fields map[string]interface{} `json:"fields,omitempty"`
+	Fields map[string]any `json:"fields,omitempty"`
 
 	// eg: panels within dashboard
 	Nested []*EntitySummary `json:"nested,omitempty"`
@@ -110,7 +117,7 @@ type EntitySummary struct {
 	References []*EntityExternalReference `json:"references,omitempty"`
 
 	// The summary can not be extended
-	_ interface{}
+	_ any
 }
 
 // Reference to another object outside itself

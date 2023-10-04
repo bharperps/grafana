@@ -19,14 +19,16 @@ import (
 	"github.com/grafana/grafana/pkg/util/errutil"
 )
 
+const authQueryParamName = "auth_token"
+
 var _ authn.ContextAwareClient = new(JWT)
 
 var (
-	errJWTInvalid = errutil.NewBase(errutil.StatusUnauthorized,
+	errJWTInvalid = errutil.Unauthorized(
 		"jwt.invalid", errutil.WithPublicMessage("Failed to verify JWT"))
-	errJWTMissingClaim = errutil.NewBase(errutil.StatusUnauthorized,
+	errJWTMissingClaim = errutil.Unauthorized(
 		"jwt.missing_claim", errutil.WithPublicMessage("Missing mandatory claim in JWT"))
-	errJWTInvalidRole = errutil.NewBase(errutil.StatusForbidden,
+	errJWTInvalidRole = errutil.Forbidden(
 		"jwt.invalid_role", errutil.WithPublicMessage("Invalid Role in claim"))
 )
 
@@ -50,6 +52,7 @@ func (s *JWT) Name() string {
 
 func (s *JWT) Authenticate(ctx context.Context, r *authn.Request) (*authn.Identity, error) {
 	jwtToken := s.retrieveToken(r.HTTPRequest)
+	s.stripSensitiveParam(r.HTTPRequest)
 
 	claims, err := s.jwtService.Verify(ctx, jwtToken)
 	if err != nil {
@@ -59,14 +62,13 @@ func (s *JWT) Authenticate(ctx context.Context, r *authn.Request) (*authn.Identi
 
 	sub, _ := claims["sub"].(string)
 	if sub == "" {
-		s.log.FromContext(ctx).Warn("Got a JWT without the mandatory 'sub' claim", "error", err)
 		return nil, errJWTMissingClaim.Errorf("missing mandatory 'sub' claim in JWT")
 	}
 
 	id := &authn.Identity{
-		AuthModule: login.JWTModule,
-		AuthID:     sub,
-		OrgRoles:   map[int64]org.RoleType{},
+		AuthenticatedBy: login.JWTModule,
+		AuthID:          sub,
+		OrgRoles:        map[int64]org.RoleType{},
 		ClientParams: authn.ClientParams{
 			SyncUser:        true,
 			FetchSyncedUser: true,
@@ -121,6 +123,18 @@ func (s *JWT) Authenticate(ctx context.Context, r *authn.Request) (*authn.Identi
 	return id, nil
 }
 
+// remove sensitive query param
+// avoid JWT URL login passing auth_token in URL
+func (s *JWT) stripSensitiveParam(httpRequest *http.Request) {
+	if s.cfg.JWTAuthURLLogin {
+		params := httpRequest.URL.Query()
+		if params.Has(authQueryParamName) {
+			params.Del(authQueryParamName)
+			httpRequest.URL.RawQuery = params.Encode()
+		}
+	}
+}
+
 // retrieveToken retrieves the JWT token from the request.
 func (s *JWT) retrieveToken(httpRequest *http.Request) string {
 	jwtToken := httpRequest.Header.Get(s.cfg.JWTAuthHeaderName)
@@ -156,7 +170,7 @@ func (s *JWT) Priority() uint {
 
 const roleGrafanaAdmin = "GrafanaAdmin"
 
-func (s *JWT) extractRoleAndAdmin(claims map[string]interface{}) (org.RoleType, bool) {
+func (s *JWT) extractRoleAndAdmin(claims map[string]any) (org.RoleType, bool) {
 	if s.cfg.JWTAuthRoleAttributePath == "" {
 		return "", false
 	}
@@ -172,7 +186,7 @@ func (s *JWT) extractRoleAndAdmin(claims map[string]interface{}) (org.RoleType, 
 	return org.RoleType(role), false
 }
 
-func searchClaimsForStringAttr(attributePath string, claims map[string]interface{}) (string, error) {
+func searchClaimsForStringAttr(attributePath string, claims map[string]any) (string, error) {
 	val, err := searchClaimsForAttr(attributePath, claims)
 	if err != nil {
 		return "", err
@@ -186,7 +200,7 @@ func searchClaimsForStringAttr(attributePath string, claims map[string]interface
 	return "", nil
 }
 
-func searchClaimsForAttr(attributePath string, claims map[string]interface{}) (interface{}, error) {
+func searchClaimsForAttr(attributePath string, claims map[string]any) (any, error) {
 	if attributePath == "" {
 		return "", errors.New("no attribute path specified")
 	}

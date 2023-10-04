@@ -9,8 +9,6 @@ import { selectors } from '@grafana/e2e-selectors';
 import { languageConfiguration, monarchlanguage } from '@grafana/monaco-logql';
 import { useTheme2, ReactMonacoEditor, Monaco, monacoTypes, MonacoEditor } from '@grafana/ui';
 
-import { isValidQuery } from '../../queryUtils';
-
 import { Props } from './MonacoQueryFieldProps';
 import { getOverrideServices } from './getOverrideServices';
 import { getCompletionProvider, getSuggestOptions } from './monaco-completion-provider';
@@ -76,9 +74,12 @@ function ensureLogQL(monaco: Monaco) {
 const getStyles = (theme: GrafanaTheme2, placeholder: string) => {
   return {
     container: css`
-      border-radius: ${theme.shape.borderRadius()};
+      border-radius: ${theme.shape.radius.default};
       border: 1px solid ${theme.components.input.borderColor};
       width: 100%;
+      .monaco-editor .suggest-widget {
+        min-width: 50%;
+      }
     `,
     placeholder: css`
       ::after {
@@ -90,15 +91,7 @@ const getStyles = (theme: GrafanaTheme2, placeholder: string) => {
   };
 };
 
-const MonacoQueryField = ({
-  history,
-  onBlur,
-  onRunQuery,
-  initialValue,
-  datasource,
-  placeholder,
-  onQueryType,
-}: Props) => {
+const MonacoQueryField = ({ history, onBlur, onRunQuery, initialValue, datasource, placeholder, onChange }: Props) => {
   const id = uuidv4();
   // we need only one instance of `overrideServices` during the lifetime of the react component
   const overrideServicesRef = useRef(getOverrideServices());
@@ -150,11 +143,7 @@ const MonacoQueryField = ({
   };
 
   const onTypeDebounced = debounce(async (query: string) => {
-    if (!onQueryType || (isValidQuery(query) === false && query !== '')) {
-      return;
-    }
-
-    onQueryType(query);
+    onChange(query);
   }, 1000);
 
   return (

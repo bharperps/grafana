@@ -38,14 +38,13 @@ type Query struct {
 	DashboardUIDs []string
 	DashboardIds  []int64
 	FolderIds     []int64
+	FolderUIDs    []string
 	Permission    dashboards.PermissionType
 	Sort          string
-
-	Result model.HitList
 }
 
 type Service interface {
-	SearchHandler(context.Context, *Query) error
+	SearchHandler(context.Context, *Query) (model.HitList, error)
 	SortOptions() []model.SortOption
 }
 
@@ -57,19 +56,18 @@ type SearchService struct {
 	dashboardService dashboards.DashboardService
 }
 
-func (s *SearchService) SearchHandler(ctx context.Context, query *Query) error {
+func (s *SearchService) SearchHandler(ctx context.Context, query *Query) (model.HitList, error) {
 	starredQuery := star.GetUserStarsQuery{
 		UserID: query.SignedInUser.UserID,
 	}
 	staredDashIDs, err := s.starService.GetByUser(ctx, &starredQuery)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// No starred dashboards will be found
 	if query.IsStarred && len(staredDashIDs.UserStars) == 0 {
-		query.Result = model.HitList{}
-		return nil
+		return model.HitList{}, nil
 	}
 
 	// filter by starred dashboard IDs when starred dashboards are requested and no UID or ID filters are specified to improve query performance
@@ -86,6 +84,7 @@ func (s *SearchService) SearchHandler(ctx context.Context, query *Query) error {
 		DashboardIds:  query.DashboardIds,
 		Type:          query.Type,
 		FolderIds:     query.FolderIds,
+		FolderUIDs:    query.FolderUIDs,
 		Tags:          query.Tags,
 		Limit:         query.Limit,
 		Page:          query.Page,
@@ -96,11 +95,11 @@ func (s *SearchService) SearchHandler(ctx context.Context, query *Query) error {
 		dashboardQuery.Sort = sortOpt
 	}
 
-	if err := s.dashboardService.SearchDashboards(ctx, &dashboardQuery); err != nil {
-		return err
+	hits, err := s.dashboardService.SearchDashboards(ctx, &dashboardQuery)
+	if err != nil {
+		return nil, err
 	}
 
-	hits := dashboardQuery.Result
 	if query.Sort == "" {
 		hits = sortedHits(hits)
 	}
@@ -114,17 +113,15 @@ func (s *SearchService) SearchHandler(ctx context.Context, query *Query) error {
 
 	// filter for starred dashboards if requested
 	if !query.IsStarred {
-		query.Result = hits
-	} else {
-		query.Result = model.HitList{}
-		for _, dashboard := range hits {
-			if dashboard.IsStarred {
-				query.Result = append(query.Result, dashboard)
-			}
+		return hits, nil
+	}
+	result := model.HitList{}
+	for _, dashboard := range hits {
+		if dashboard.IsStarred {
+			result = append(result, dashboard)
 		}
 	}
-
-	return nil
+	return result, nil
 }
 
 func sortedHits(unsorted model.HitList) model.HitList {

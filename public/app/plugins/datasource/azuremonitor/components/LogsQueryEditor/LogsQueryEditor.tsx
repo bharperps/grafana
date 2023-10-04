@@ -1,17 +1,20 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 
 import { EditorFieldGroup, EditorRow, EditorRows } from '@grafana/experimental';
 import { Alert } from '@grafana/ui';
 
 import Datasource from '../../datasource';
-import { AzureMonitorErrorish, AzureMonitorOption, AzureMonitorQuery } from '../../types';
+import { selectors } from '../../e2e/selectors';
+import { AzureMonitorErrorish, AzureMonitorOption, AzureMonitorQuery, ResultFormat, EngineSchema } from '../../types';
+import FormatAsField from '../FormatAsField';
 import ResourceField from '../ResourceField';
 import { ResourceRow, ResourceRowGroup, ResourceRowType } from '../ResourcePicker/types';
 import { parseResourceDetails } from '../ResourcePicker/utils';
 
 import AdvancedResourcePicker from './AdvancedResourcePicker';
-import FormatAsField from './FormatAsField';
 import QueryField from './QueryField';
+import { TimeManagement } from './TimeManagement';
+import { setFormatAs } from './setQueryValue';
 import useMigrations from './useMigrations';
 
 interface LogsQueryEditorProps {
@@ -47,9 +50,18 @@ const LogsQueryEditor = ({
     // Only resources with the same metricNamespace can be selected
     return rowResourceNS !== selectedRowSampleNs;
   };
+  const [schema, setSchema] = useState<EngineSchema | undefined>();
+
+  useEffect(() => {
+    if (query.azureLogAnalytics?.resources && query.azureLogAnalytics.resources.length) {
+      datasource.azureLogAnalyticsDatasource.getKustoSchema(query.azureLogAnalytics.resources[0]).then((schema) => {
+        setSchema(schema);
+      });
+    }
+  }, [query.azureLogAnalytics?.resources, datasource.azureLogAnalyticsDatasource]);
 
   return (
-    <span data-testid="azure-monitor-logs-query-editor-with-experimental-ui">
+    <span data-testid={selectors.components.queryEditor.logsQueryEditor.container.input}>
       <EditorRows>
         <EditorRow>
           <EditorFieldGroup>
@@ -79,6 +91,14 @@ const LogsQueryEditor = ({
               )}
               selectionNotice={() => 'You may only choose items of the same resource type.'}
             />
+            <TimeManagement
+              query={query}
+              datasource={datasource}
+              variableOptionGroup={variableOptionGroup}
+              onQueryChange={onChange}
+              setError={setError}
+              schema={schema}
+            />
           </EditorFieldGroup>
         </EditorRow>
         <QueryField
@@ -88,6 +108,7 @@ const LogsQueryEditor = ({
           variableOptionGroup={variableOptionGroup}
           onQueryChange={onChange}
           setError={setError}
+          schema={schema}
         />
         <EditorRow>
           <EditorFieldGroup>
@@ -99,6 +120,14 @@ const LogsQueryEditor = ({
                 variableOptionGroup={variableOptionGroup}
                 onQueryChange={onChange}
                 setError={setError}
+                inputId={'azure-monitor-logs'}
+                options={[
+                  { label: 'Time series', value: ResultFormat.TimeSeries },
+                  { label: 'Table', value: ResultFormat.Table },
+                ]}
+                defaultValue={ResultFormat.Table}
+                setFormatAs={setFormatAs}
+                resultFormat={query.azureLogAnalytics?.resultFormat}
               />
             )}
 

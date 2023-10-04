@@ -1,10 +1,10 @@
 import { css, cx } from '@emotion/css';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import { Draggable } from 'react-beautiful-dnd';
 
 import { DataSourceApi, GrafanaTheme2 } from '@grafana/data';
 import { Stack } from '@grafana/experimental';
-import { Button, Icon, InlineField, Tooltip, useStyles2 } from '@grafana/ui';
+import { Button, Icon, InlineField, Tooltip, useTheme2 } from '@grafana/ui';
 import { isConflictingFilter } from 'app/plugins/datasource/loki/querybuilder/operationUtils';
 import { LokiOperationId } from 'app/plugins/datasource/loki/querybuilder/types';
 
@@ -44,9 +44,15 @@ export function OperationEditor({
   flash,
   highlight,
 }: Props) {
-  const styles = useStyles2(getStyles);
   const def = queryModeller.getOperationDef(operation.id);
   const shouldFlash = useFlash(flash);
+  const id = useId();
+
+  const isConflicting =
+    operation.id === LokiOperationId.LabelFilter && isConflictingFilter(operation, query.operations);
+
+  const theme = useTheme2();
+  const styles = getStyles(theme, isConflicting);
 
   if (!def) {
     return <span>Operation {operation.id} not found</span>;
@@ -81,7 +87,7 @@ export function OperationEditor({
       <div className={styles.paramRow} key={`${paramIndex}-1`}>
         {!paramDef.hideName && (
           <div className={styles.paramName}>
-            <label htmlFor={getOperationParamId(index, paramIndex)}>{paramDef.name}</label>
+            <label htmlFor={getOperationParamId(id, paramIndex)}>{paramDef.name}</label>
             {paramDef.description && (
               <Tooltip placement="top" content={paramDef.description} theme="info">
                 <Icon name="info-circle" size="sm" className={styles.infoIcon} />
@@ -96,7 +102,7 @@ export function OperationEditor({
               paramDef={paramDef}
               value={operation.params[paramIndex]}
               operation={operation}
-              operationIndex={index}
+              operationId={id}
               onChange={onParamValueChanged}
               onRunQuery={onRunQuery}
               query={query}
@@ -126,11 +132,6 @@ export function OperationEditor({
     if (lastParamDef.restParam) {
       restParam = renderAddRestParamButton(lastParamDef, onAddRestParam, index, operation.params.length, styles);
     }
-  }
-
-  let isConflicting = false;
-  if (operation.id === LokiOperationId.LabelFilter) {
-    isConflicting = isConflictingFilter(operation, query.operations);
   }
 
   const isInvalid = (isDragging: boolean) => {
@@ -243,7 +244,7 @@ function callParamChangedThenOnChange(
   }
 }
 
-const getStyles = (theme: GrafanaTheme2) => {
+const getStyles = (theme: GrafanaTheme2, isConflicting: boolean) => {
   return {
     cardWrapper: css({
       alignItems: 'stretch',
@@ -254,14 +255,11 @@ const getStyles = (theme: GrafanaTheme2) => {
     card: css({
       background: theme.colors.background.primary,
       border: `1px solid ${theme.colors.border.medium}`,
-      display: 'flex',
-      flexDirection: 'column',
       cursor: 'grab',
-      borderRadius: theme.shape.borderRadius(1),
-      marginBottom: theme.spacing(1),
+      borderRadius: theme.shape.radius.default,
       position: 'relative',
       transition: 'all 0.5s ease-in 0s',
-      height: '100%',
+      height: isConflicting ? 'auto' : '100%',
     }),
     cardError: css({
       boxShadow: `0px 0px 4px 0px ${theme.colors.warning.main}`,

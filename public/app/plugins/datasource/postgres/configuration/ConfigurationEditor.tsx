@@ -8,6 +8,7 @@ import {
   updateDatasourcePluginJsonDataOption,
   updateDatasourcePluginResetOption,
 } from '@grafana/data';
+import { config } from '@grafana/runtime';
 import {
   Alert,
   InlineSwitch,
@@ -19,10 +20,9 @@ import {
   SecretInput,
   Link,
 } from '@grafana/ui';
-import { config } from 'app/core/config';
 import { ConnectionLimits } from 'app/features/plugins/sql/components/configuration/ConnectionLimits';
 import { TLSSecretsConfig } from 'app/features/plugins/sql/components/configuration/TLSSecretsConfig';
-import { useMigrateDatabaseField } from 'app/features/plugins/sql/components/configuration/useMigrateDatabaseField';
+import { useMigrateDatabaseFields } from 'app/features/plugins/sql/components/configuration/useMigrateDatabaseFields';
 
 import { PostgresOptions, PostgresTLSMethods, PostgresTLSModes, SecureJsonData } from '../types';
 
@@ -49,7 +49,7 @@ export const PostgresConfigEditor = (props: DataSourcePluginOptionsEditorProps<P
 
   useAutoDetectFeatures({ props, setVersionOptions });
 
-  useMigrateDatabaseField(props);
+  useMigrateDatabaseFields(props);
 
   const { options, onOptionsChange } = props;
   const jsonData = options.jsonData;
@@ -167,7 +167,7 @@ export const PostgresConfigEditor = (props: DataSourcePluginOptionsEditorProps<P
         ) : null}
       </FieldSet>
 
-      {config.featureToggles.secureSocksDatasourceProxy && (
+      {config.secureSocksDSProxyEnabled && (
         <FieldSet label="Secure Socks Proxy">
           <InlineField labelWidth={26} label="Enabled" tooltip="Connect to this datasource via the secure socks proxy.">
             <InlineSwitch
@@ -246,13 +246,7 @@ export const PostgresConfigEditor = (props: DataSourcePluginOptionsEditorProps<P
         </FieldSet>
       ) : null}
 
-      <ConnectionLimits
-        labelWidth={labelWidthShort}
-        jsonData={jsonData}
-        onPropertyChanged={(property, value) => {
-          updateDatasourcePluginJsonDataOption(props, property, value);
-        }}
-      ></ConnectionLimits>
+      <ConnectionLimits options={options} onOptionsChange={onOptionsChange} />
 
       <FieldSet label="PostgreSQL details">
         <InlineField

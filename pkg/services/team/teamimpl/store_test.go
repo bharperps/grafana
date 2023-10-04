@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/grafana/pkg/infra/db"
 	ac "github.com/grafana/grafana/pkg/services/accesscontrol"
+	"github.com/grafana/grafana/pkg/services/auth/identity"
 	"github.com/grafana/grafana/pkg/services/dashboards"
 	"github.com/grafana/grafana/pkg/services/org/orgimpl"
 	"github.com/grafana/grafana/pkg/services/quota/quotaimpl"
@@ -19,6 +20,7 @@ import (
 	"github.com/grafana/grafana/pkg/services/sqlstore"
 	"github.com/grafana/grafana/pkg/services/supportbundles/supportbundlestest"
 	"github.com/grafana/grafana/pkg/services/team"
+	"github.com/grafana/grafana/pkg/services/team/sortopts"
 	"github.com/grafana/grafana/pkg/services/user"
 	"github.com/grafana/grafana/pkg/services/user/userimpl"
 )
@@ -232,6 +234,40 @@ func TestIntegrationTeamCommandsAndQueries(t *testing.T) {
 				require.Equal(t, len(query2Result.Teams), 2)
 			})
 
+			t.Run("Should be able to sort teams by descending member count order", func(t *testing.T) {
+				sortOpts, err := sortopts.ParseSortQueryParam("memberCount-desc")
+				require.NoError(t, err)
+
+				// Add a team member
+				err = teamSvc.AddTeamMember(userIds[0], testOrgID, team2.ID, false, 0)
+				require.NoError(t, err)
+				defer func() {
+					err := teamSvc.RemoveTeamMember(context.Background(),
+						&team.RemoveTeamMemberCommand{OrgID: testOrgID, UserID: userIds[0], TeamID: team2.ID})
+					require.NoError(t, err)
+				}()
+
+				query := &team.SearchTeamsQuery{OrgID: testOrgID, SortOpts: sortOpts, SignedInUser: testUser}
+				queryResult, err := teamSvc.SearchTeams(context.Background(), query)
+				require.NoError(t, err)
+				require.Equal(t, len(queryResult.Teams), 2)
+				require.EqualValues(t, queryResult.TotalCount, 2)
+				require.Greater(t, queryResult.Teams[0].MemberCount, queryResult.Teams[1].MemberCount)
+			})
+
+			t.Run("Should be able to sort teams by descending name order", func(t *testing.T) {
+				sortOpts, err := sortopts.ParseSortQueryParam("name-desc")
+				require.NoError(t, err)
+
+				query := &team.SearchTeamsQuery{OrgID: testOrgID, SortOpts: sortOpts, SignedInUser: testUser}
+				queryResult, err := teamSvc.SearchTeams(context.Background(), query)
+				require.NoError(t, err)
+				require.Equal(t, len(queryResult.Teams), 2)
+				require.EqualValues(t, queryResult.TotalCount, 2)
+				require.Equal(t, queryResult.Teams[0].Name, team2.Name)
+				require.Equal(t, queryResult.Teams[1].Name, team1.Name)
+			})
+
 			t.Run("Should be able to return all teams a user is member of", func(t *testing.T) {
 				sqlStore = db.InitTestDB(t)
 				setup()
@@ -319,26 +355,6 @@ func TestIntegrationTeamCommandsAndQueries(t *testing.T) {
 				require.Equal(t, len(permQueryResult), 0)
 			})
 
-			t.Run("Should be able to return if user is admin of teams or not", func(t *testing.T) {
-				sqlStore = db.InitTestDB(t)
-				setup()
-				groupId := team2.ID
-				err := teamSvc.AddTeamMember(userIds[0], testOrgID, groupId, false, 0)
-				require.NoError(t, err)
-				err = teamSvc.AddTeamMember(userIds[1], testOrgID, groupId, false, dashboards.PERMISSION_ADMIN)
-				require.NoError(t, err)
-
-				query := &team.IsAdminOfTeamsQuery{SignedInUser: &user.SignedInUser{OrgID: testOrgID, UserID: userIds[0]}}
-				queryResult, err := teamSvc.IsAdminOfTeams(context.Background(), query)
-				require.NoError(t, err)
-				require.False(t, queryResult)
-
-				query = &team.IsAdminOfTeamsQuery{SignedInUser: &user.SignedInUser{OrgID: testOrgID, UserID: userIds[1]}}
-				queryResult, err = teamSvc.IsAdminOfTeams(context.Background(), query)
-				require.NoError(t, err)
-				require.True(t, queryResult)
-			})
-
 			t.Run("Should not return hidden users in team member count", func(t *testing.T) {
 				sqlStore = db.InitTestDB(t)
 				setup()
@@ -367,13 +383,6 @@ func TestIntegrationTeamCommandsAndQueries(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, len(searchQueryResult.Teams), 2)
 				team1 := searchQueryResult.Teams[0]
-				require.EqualValues(t, team1.MemberCount, 2)
-
-				searchQueryFilteredByUser := &team.SearchTeamsQuery{OrgID: testOrgID, Page: 1, Limit: 10, UserIDFilter: userIds[0], SignedInUser: signedInUser, HiddenUsers: hiddenUsers}
-				searchQueryFilteredByUserResult, err := teamSvc.SearchTeams(context.Background(), searchQueryFilteredByUser)
-				require.NoError(t, err)
-				require.Equal(t, len(searchQueryFilteredByUserResult.Teams), 1)
-				team1 = searchQueryResult.Teams[0]
 				require.EqualValues(t, team1.MemberCount, 2)
 
 				getTeamQuery := &team.GetTeamByIDQuery{OrgID: testOrgID, ID: teamId, SignedInUser: signedInUser, HiddenUsers: hiddenUsers}
@@ -427,9 +436,9 @@ func TestIntegrationSQLStore_SearchTeams(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	type searchTeamsTestCase struct {
-		desc             string
-		query            *team.SearchTeamsQuery
-		expectedNumUsers int
+		desc              string
+		query             *team.SearchTeamsQuery
+		expectedTeamCount int
 	}
 
 	tests := []searchTeamsTestCase{
@@ -442,7 +451,7 @@ func TestIntegrationSQLStore_SearchTeams(t *testing.T) {
 					Permissions: map[int64]map[string][]string{1: {ac.ActionTeamsRead: {ac.ScopeTeamsAll}}},
 				},
 			},
-			expectedNumUsers: 10,
+			expectedTeamCount: 10,
 		},
 		{
 			desc: "should return no teams",
@@ -453,7 +462,7 @@ func TestIntegrationSQLStore_SearchTeams(t *testing.T) {
 					Permissions: map[int64]map[string][]string{1: {ac.ActionTeamsRead: {""}}},
 				},
 			},
-			expectedNumUsers: 0,
+			expectedTeamCount: 0,
 		},
 		{
 			desc: "should return some teams",
@@ -468,7 +477,7 @@ func TestIntegrationSQLStore_SearchTeams(t *testing.T) {
 					}}},
 				},
 			},
-			expectedNumUsers: 3,
+			expectedTeamCount: 3,
 		},
 	}
 
@@ -485,12 +494,13 @@ func TestIntegrationSQLStore_SearchTeams(t *testing.T) {
 		t.Run(tt.desc, func(t *testing.T) {
 			queryResult, err := teamSvc.SearchTeams(context.Background(), tt.query)
 			require.NoError(t, err)
-			assert.Len(t, queryResult.Teams, tt.expectedNumUsers)
-			assert.Equal(t, queryResult.TotalCount, int64(tt.expectedNumUsers))
+			assert.Len(t, queryResult.Teams, tt.expectedTeamCount)
+			assert.Equal(t, queryResult.TotalCount, int64(tt.expectedTeamCount))
 
-			if !hasWildcardScope(tt.query.SignedInUser, ac.ActionTeamsRead) {
+			castSignedInUser := tt.query.SignedInUser.(*user.SignedInUser)
+			if !hasWildcardScope(castSignedInUser, ac.ActionTeamsRead) {
 				for _, team := range queryResult.Teams {
-					assert.Contains(t, tt.query.SignedInUser.Permissions[tt.query.SignedInUser.OrgID][ac.ActionTeamsRead], fmt.Sprintf("teams:id:%d", team.ID))
+					assert.Contains(t, castSignedInUser.Permissions[castSignedInUser.OrgID][ac.ActionTeamsRead], fmt.Sprintf("teams:id:%d", team.ID))
 				}
 			}
 		})
@@ -599,7 +609,7 @@ func TestIntegrationSQLStore_GetTeamMembers_ACFilter(t *testing.T) {
 			if !hasWildcardScope(tt.query.SignedInUser, ac.ActionOrgUsersRead) {
 				for _, member := range queryResult {
 					assert.Contains(t,
-						tt.query.SignedInUser.Permissions[tt.query.SignedInUser.OrgID][ac.ActionOrgUsersRead],
+						tt.query.SignedInUser.GetPermissions()[ac.ActionOrgUsersRead],
 						ac.Scope("users", "id", fmt.Sprintf("%d", member.UserID)),
 					)
 				}
@@ -608,8 +618,8 @@ func TestIntegrationSQLStore_GetTeamMembers_ACFilter(t *testing.T) {
 	}
 }
 
-func hasWildcardScope(user *user.SignedInUser, action string) bool {
-	for _, scope := range user.Permissions[user.OrgID][action] {
+func hasWildcardScope(user identity.Requester, action string) bool {
+	for _, scope := range user.GetPermissions()[action] {
 		if strings.HasSuffix(scope, ":*") {
 			return true
 		}

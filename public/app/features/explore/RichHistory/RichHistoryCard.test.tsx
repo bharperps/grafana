@@ -4,15 +4,18 @@ import React from 'react';
 
 import { DataSourceApi, DataSourceInstanceSettings, DataSourcePluginMeta } from '@grafana/data';
 import { DataQuery, DataSourceRef } from '@grafana/schema';
-import appEvents from 'app/core/app_events';
 import { MixedDatasource } from 'app/plugins/datasource/mixed/MixedDataSource';
+import { RichHistoryQuery } from 'app/types';
 import { ShowConfirmModalEvent } from 'app/types/events';
-import { ExploreId, RichHistoryQuery } from 'app/types/explore';
 
 import { RichHistoryCard, Props } from './RichHistoryCard';
 
 const starRichHistoryMock = jest.fn();
 const deleteRichHistoryMock = jest.fn();
+
+const mockEventBus = {
+  publish: jest.fn(),
+};
 
 class MockDatasourceApi<T extends DataQuery> implements DataSourceApi<T> {
   name: string;
@@ -66,6 +69,7 @@ const dsStore: Record<string, DataSourceApi> = {
 jest.mock('@grafana/runtime', () => ({
   ...jest.requireActual('@grafana/runtime'),
   reportInteraction: jest.fn(),
+  getAppEvents: () => mockEventBus,
 }));
 
 jest.mock('@grafana/runtime/src/services/dataSourceSrv', () => {
@@ -120,7 +124,7 @@ const setup = (propOverrides?: Partial<Props<MockQuery>>) => {
     deleteHistoryItem: deleteRichHistoryMock,
     commentHistoryItem: jest.fn(),
     setQueries: jest.fn(),
-    exploreId: ExploreId.left,
+    exploreId: 'left',
     datasourceInstance: dsStore.loki,
   };
 
@@ -384,28 +388,28 @@ describe('RichHistoryCard', () => {
     });
     it('should have title "Edit comment" at comment icon, if comment present', async () => {
       setup({ query: starredQueryWithComment });
-      const editComment = await screen.findByTitle('Edit comment');
+      const editComment = await screen.findByLabelText('Edit comment');
       const addComment = screen.queryByTitle('Add comment');
       expect(editComment).toBeInTheDocument();
       expect(addComment).not.toBeInTheDocument();
     });
     it('should have title "Add comment" at comment icon, if no comment present', async () => {
       setup();
-      const addComment = await screen.findByTitle('Add comment');
+      const addComment = await screen.findByLabelText('Add comment');
       const editComment = await screen.queryByTitle('Edit comment');
       expect(addComment).toBeInTheDocument();
       expect(editComment).not.toBeInTheDocument();
     });
     it('should open update comment form when edit comment button clicked', async () => {
       setup({ query: starredQueryWithComment });
-      const editComment = await screen.findByTitle('Edit comment');
+      const editComment = await screen.findByLabelText('Edit comment');
       await userEvent.click(editComment);
       const updateCommentForm = await screen.findByLabelText('Update comment form');
       expect(updateCommentForm).toBeInTheDocument();
     });
     it('should close update comment form when escape key pressed', async () => {
       setup({ query: starredQueryWithComment });
-      const editComment = await screen.findByTitle('Edit comment');
+      const editComment = await screen.findByLabelText('Edit comment');
       await userEvent.click(editComment);
       const updateCommentForm = await screen.findByLabelText('Update comment form');
       await userEvent.click(updateCommentForm);
@@ -417,7 +421,7 @@ describe('RichHistoryCard', () => {
     });
     it('should close update comment form when enter and shift keys pressed', async () => {
       setup({ query: starredQueryWithComment });
-      const editComment = await screen.findByTitle('Edit comment');
+      const editComment = await screen.findByLabelText('Edit comment');
       await userEvent.click(editComment);
       const updateCommentForm = await screen.findByLabelText('Update comment form');
       await userEvent.click(updateCommentForm);
@@ -430,7 +434,7 @@ describe('RichHistoryCard', () => {
     });
     it('should close update comment form when enter and ctrl keys pressed', async () => {
       setup({ query: starredQueryWithComment });
-      const editComment = await screen.findByTitle('Edit comment');
+      const editComment = await screen.findByLabelText('Edit comment');
       await userEvent.click(editComment);
       const updateCommentForm = await screen.findByLabelText('Update comment form');
       await userEvent.click(updateCommentForm);
@@ -443,7 +447,7 @@ describe('RichHistoryCard', () => {
     });
     it('should not close update comment form when enter key pressed', async () => {
       setup({ query: starredQueryWithComment });
-      const editComment = await screen.findByTitle('Edit comment');
+      const editComment = await screen.findByLabelText('Edit comment');
       await userEvent.click(editComment);
       const updateCommentForm = await screen.findByLabelText('Update comment form');
       await userEvent.click(updateCommentForm);
@@ -459,14 +463,14 @@ describe('RichHistoryCard', () => {
   describe('starring', () => {
     it('should have title "Star query", if not starred', async () => {
       setup();
-      const starButton = await screen.findByTitle('Star query');
+      const starButton = await screen.findByLabelText('Star query');
       expect(starButton).toBeInTheDocument();
       await userEvent.click(starButton);
       expect(starRichHistoryMock).toBeCalledWith(starredQueryWithComment.id, true);
     });
     it('should have title "Unstar query", if not starred', async () => {
       setup({ query: starredQueryWithComment });
-      const unstarButton = await screen.findByTitle('Unstar query');
+      const unstarButton = await screen.findByLabelText('Unstar query');
       expect(unstarButton).toBeInTheDocument();
       await userEvent.click(unstarButton);
       expect(starRichHistoryMock).toBeCalledWith(starredQueryWithComment.id, false);
@@ -476,17 +480,17 @@ describe('RichHistoryCard', () => {
   describe('deleting', () => {
     it('should delete if not starred', async () => {
       setup();
-      const deleteButton = await screen.findByTitle('Delete query');
+      const deleteButton = await screen.findByLabelText('Delete query');
       expect(deleteButton).toBeInTheDocument();
       await userEvent.click(deleteButton);
       expect(deleteRichHistoryMock).toBeCalledWith(starredQueryWithComment.id);
     });
     it('should display modal before deleting if starred', async () => {
       setup({ query: starredQueryWithComment });
-      const deleteButton = await screen.findByTitle('Delete query');
+      const deleteButton = await screen.findByLabelText('Delete query');
       await userEvent.click(deleteButton);
       expect(deleteRichHistoryMock).not.toBeCalled();
-      expect(appEvents.publish).toHaveBeenCalledWith(new ShowConfirmModalEvent(expect.anything()));
+      expect(mockEventBus.publish).toHaveBeenCalledWith(new ShowConfirmModalEvent(expect.anything()));
     });
   });
 });

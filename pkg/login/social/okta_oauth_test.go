@@ -1,6 +1,7 @@
 package social
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -21,7 +22,7 @@ func TestSocialOkta_UserInfo(t *testing.T) {
 	tests := []struct {
 		name                    string
 		userRawJSON             string
-		OAuth2Extra             interface{}
+		OAuth2Extra             any
 		autoAssignOrgRole       string
 		settingSkipOrgRoleSync  bool
 		allowAssignGrafanaAdmin bool
@@ -36,7 +37,7 @@ func TestSocialOkta_UserInfo(t *testing.T) {
 			name:              "Should give role from JSON and email from id token",
 			userRawJSON:       `{ "email": "okta-octopus@grafana.com", "role": "Admin" }`,
 			RoleAttributePath: "role",
-			OAuth2Extra: map[string]interface{}{
+			OAuth2Extra: map[string]any{
 				// {
 				// "email": "okto.octopus@test.com"
 				// },
@@ -52,7 +53,7 @@ func TestSocialOkta_UserInfo(t *testing.T) {
 			userRawJSON:            `{ "email": "okta-octopus@grafana.com", "role": "Admin" }`,
 			RoleAttributePath:      "role",
 			settingSkipOrgRoleSync: true,
-			OAuth2Extra: map[string]interface{}{
+			OAuth2Extra: map[string]any{
 				// {
 				// "email": "okto.octopus@test.com"
 				// },
@@ -68,7 +69,7 @@ func TestSocialOkta_UserInfo(t *testing.T) {
 			userRawJSON:             fmt.Sprintf(`{ "email": "okta-octopus@grafana.com", "role": "%s" }`, RoleGrafanaAdmin),
 			RoleAttributePath:       "role",
 			allowAssignGrafanaAdmin: true,
-			OAuth2Extra: map[string]interface{}{
+			OAuth2Extra: map[string]any{
 				// {
 				// "email": "okto.octopus@test.com"
 				// },
@@ -110,7 +111,7 @@ func TestSocialOkta_UserInfo(t *testing.T) {
 				Expiry:       time.Now(),
 			}
 			token := staticToken.WithExtra(tt.OAuth2Extra)
-			got, err := provider.UserInfo(server.Client(), token)
+			got, err := provider.UserInfo(context.Background(), server.Client(), token)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("UserInfo() error = %v, wantErr %v", err, tt.wantErr)
 				return

@@ -8,8 +8,12 @@ import {
   DataSourceInstanceSettings,
   DataSourceJsonData,
   DataSourceRef,
-  MutableDataFrame,
+  createDataFrame,
+  AdHocVariableFilter,
+  ScopedVars,
 } from '@grafana/data';
+
+import { config } from '../config';
 
 import {
   DataSourceWithBackend,
@@ -17,10 +21,20 @@ import {
   standardStreamOptionsProvider,
   toStreamingDataResponse,
 } from './DataSourceWithBackend';
+import { publicDashboardQueryHandler } from './publicDashboardQueryHandler';
 
-class MyDataSource extends DataSourceWithBackend<DataQuery, DataSourceJsonData> {
+interface MyQuery extends DataQuery {
+  filters?: AdHocVariableFilter[];
+  applyTemplateVariablesCalled?: boolean;
+}
+
+class MyDataSource extends DataSourceWithBackend<MyQuery, DataSourceJsonData> {
   constructor(instanceSettings: DataSourceInstanceSettings<DataSourceJsonData>) {
     super(instanceSettings);
+  }
+
+  applyTemplateVariables(query: MyQuery, scopedVars: ScopedVars, filters?: AdHocVariableFilter[] | undefined): MyQuery {
+    return { ...query, applyTemplateVariablesCalled: true, filters };
   }
 }
 
@@ -44,6 +58,7 @@ jest.mock('../services', () => ({
     };
   },
 }));
+jest.mock('./publicDashboardQueryHandler');
 
 describe('DataSourceWithBackend', () => {
   test('check the executed queries', () => {
@@ -54,6 +69,7 @@ describe('DataSourceWithBackend', () => {
       targets: [{ refId: 'A' }, { refId: 'B', datasource: { type: 'sample' } }],
       dashboardUID: 'dashA',
       panelId: 123,
+      filters: [{ key: 'key1', operator: '=', value: 'val1' }],
       queryGroupId: 'abc',
     } as DataQueryRequest);
 
@@ -65,11 +81,19 @@ describe('DataSourceWithBackend', () => {
         "data": {
           "queries": [
             {
+              "applyTemplateVariablesCalled": true,
               "datasource": {
                 "type": "dummy",
                 "uid": "abc",
               },
               "datasourceId": 1234,
+              "filters": [
+                {
+                  "key": "key1",
+                  "operator": "=",
+                  "value": "val1",
+                },
+              ],
               "intervalMs": 5000,
               "maxDataPoints": 10,
               "queryCachingTTL": undefined,
@@ -98,7 +122,64 @@ describe('DataSourceWithBackend', () => {
         "hideFromInspector": false,
         "method": "POST",
         "requestId": undefined,
-        "url": "/api/ds/query",
+        "url": "/api/ds/query?ds_type=dummy",
+      }
+    `);
+  });
+
+  test('correctly creates expression queries', () => {
+    const { mock, ds } = createMockDatasource();
+    ds.query({
+      maxDataPoints: 10,
+      intervalMs: 5000,
+      targets: [{ refId: 'A' }, { refId: 'B', datasource: { type: '__expr__' } }],
+      dashboardUID: 'dashA',
+      panelId: 123,
+      queryGroupId: 'abc',
+    } as DataQueryRequest);
+
+    const args = mock.calls[0][0];
+
+    expect(mock.calls.length).toBe(1);
+    expect(args).toMatchInlineSnapshot(`
+      {
+        "data": {
+          "queries": [
+            {
+              "applyTemplateVariablesCalled": true,
+              "datasource": {
+                "type": "dummy",
+                "uid": "abc",
+              },
+              "datasourceId": 1234,
+              "filters": undefined,
+              "intervalMs": 5000,
+              "maxDataPoints": 10,
+              "queryCachingTTL": undefined,
+              "refId": "A",
+            },
+            {
+              "datasource": {
+                "name": "Expression",
+                "type": "__expr__",
+                "uid": "__expr__",
+              },
+              "refId": "B",
+            },
+          ],
+        },
+        "headers": {
+          "X-Dashboard-Uid": "dashA",
+          "X-Datasource-Uid": "abc",
+          "X-Grafana-From-Expr": "true",
+          "X-Panel-Id": "123",
+          "X-Plugin-Id": "dummy",
+          "X-Query-Group-Id": "abc",
+        },
+        "hideFromInspector": false,
+        "method": "POST",
+        "requestId": undefined,
+        "url": "/api/ds/query?ds_type=dummy&expression=true",
       }
     `);
   });
@@ -135,11 +216,13 @@ describe('DataSourceWithBackend', () => {
         "data": {
           "queries": [
             {
+              "applyTemplateVariablesCalled": true,
               "datasource": {
                 "type": "dummy",
                 "uid": "abc",
               },
               "datasourceId": 1234,
+              "filters": undefined,
               "intervalMs": 5000,
               "maxDataPoints": 10,
               "queryCachingTTL": undefined,
@@ -167,7 +250,7 @@ describe('DataSourceWithBackend', () => {
         "hideFromInspector": true,
         "method": "POST",
         "requestId": undefined,
-        "url": "/api/ds/query",
+        "url": "/api/ds/query?ds_type=dummy",
       }
     `);
   });
@@ -185,10 +268,12 @@ describe('DataSourceWithBackend', () => {
     let obs = toStreamingDataResponse(rsp, request, standardStreamOptionsProvider);
     expect(obs).toBeDefined();
 
-    let frame = new MutableDataFrame();
-    frame.meta = {
-      channel: 'a/b/c',
-    };
+    let frame = createDataFrame({
+      meta: {
+        channel: 'a/b/c',
+      },
+      fields: [],
+    });
     rsp.data = [frame];
     obs = toStreamingDataResponse(rsp, request, standardStreamOptionsProvider);
     expect(obs).toBeDefined();
@@ -252,6 +337,45 @@ describe('DataSourceWithBackend', () => {
       expect(isExpressionReference('Expression')).toBeTruthy(); // Name
       expect(isExpressionReference({ type: '__expr__' })).toBeTruthy();
       expect(isExpressionReference({ type: '-100' })).toBeTruthy();
+      expect(isExpressionReference(null)).toBeFalsy();
+      expect(isExpressionReference(undefined)).toBeFalsy();
+    });
+  });
+
+  describe('public dashboard scope', () => {
+    test("check public dashboard handler is not executed when it's not public dashboard scope", () => {
+      const { ds } = createMockDatasource();
+
+      const request = {
+        maxDataPoints: 10,
+        intervalMs: 5000,
+        targets: [{ refId: 'A' }, { refId: 'B', datasource: { type: 'sample' } }],
+        dashboardUID: 'dashA',
+        panelId: 123,
+        queryGroupId: 'abc',
+      } as DataQueryRequest;
+
+      ds.query(request);
+
+      expect(publicDashboardQueryHandler).not.toHaveBeenCalledWith(request);
+    });
+
+    test("check public dashboard handler is executed when it's public dashboard scope", () => {
+      config.publicDashboardAccessToken = 'abc123';
+      const { ds } = createMockDatasource();
+
+      const request = {
+        maxDataPoints: 10,
+        intervalMs: 5000,
+        targets: [{ refId: 'A' }, { refId: 'B', datasource: { type: 'sample' } }],
+        dashboardUID: 'dashA',
+        panelId: 123,
+        queryGroupId: 'abc',
+      } as DataQueryRequest;
+
+      ds.query(request);
+
+      expect(publicDashboardQueryHandler).toHaveBeenCalledWith(request);
     });
   });
 });
